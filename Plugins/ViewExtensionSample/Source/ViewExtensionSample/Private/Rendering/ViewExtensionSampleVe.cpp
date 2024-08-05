@@ -51,6 +51,10 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 		return;
 	}
 
+	
+	FScreenPassTexture ScreenPassTex(SceneTextures->GetParameters()->GBufferATexture);
+	RDG_EVENT_SCOPE(GraphBuilder, "FViewExtensionSampleVe::PostRenderBasePassDeferred %dx%d", ScreenPassTex.ViewRect.Width(), ScreenPassTex.ViewRect.Height());
+	
 	/*
 	GBUfferレイアウト -> DeferredShadingCommon.ush EncodeGBuffer()
 	ShadingModelID -> ShadingCommon.ush
@@ -128,26 +132,23 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		return;
 	}
 	
-	RDG_EVENT_SCOPE(GraphBuilder, "FViewExtensionSampleVe::PrePostProcessPass_RenderThread %dx%d", SceneColorTextureViewport.Rect.Width(), SceneColorTextureViewport.Rect.Height());
+	RDG_EVENT_SCOPE(GraphBuilder, "FViewExtensionSampleVe::PrePostProcessPass %dx%d", SceneColorTextureViewport.Rect.Width(), SceneColorTextureViewport.Rect.Height());
 
+	// PostProsess前パスでScreenPassとして任意VSPSを動作させるテスト.
 	{
 		// Getting material data for the current view.
 		FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 
-		// Reusing the same output description for our back buffer as SceneColor
+		/*
 		FRDGTextureDesc TestOutputDesc = SceneColor.Texture->Desc;
-
 		TestOutputDesc.Format = PF_FloatRGBA;
 		FLinearColor ClearColor(0., 0., 0., 0.);
 		TestOutputDesc.ClearValue = FClearValueBinding(ClearColor);
-
 		FRDGTexture* OutputRenderTargetTexture = GraphBuilder.CreateTexture(TestOutputDesc, TEXT("ViewExtensionSampleTestOutput"));
+		*/
 		
 		//FScreenPassRenderTarget BackBufferRenderTarget = FScreenPassRenderTarget(OutputRenderTargetTexture, SceneColor.ViewRect, ERenderTargetLoadAction::EClear);
 		FScreenPassRenderTarget SceneColorRenderTarget(SceneColor, ERenderTargetLoadAction::ELoad);
-
-
-#if 1
 		{
 			FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha, BO_Add, BF_Zero, BF_One>::GetRHI();
 
@@ -174,10 +175,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters
 			);
 		}
-#else
-		// Clearテスト.
-		AddClearRenderTargetPass(GraphBuilder, SceneColor.Texture, FLinearColor::Blue);
-#endif
 		
 		// Because we are not using proxy material, but plain global shader, we need to setup Scene textures ourselves.
 		// We don't need to do this per region.
