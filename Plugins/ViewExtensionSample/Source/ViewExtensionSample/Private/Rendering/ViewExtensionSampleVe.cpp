@@ -27,17 +27,83 @@ void FViewExtensionSampleVe::BeginRenderViewFamily(FSceneViewFamily& InViewFamil
 	// 特になし.
 }
 	
-void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
+/**
+ * Called right after Base Pass rendering finished when using the deferred renderer.
+ */
+
+BEGIN_SHADER_PARAMETER_STRUCT(FViewExtensionSamplePreBasePassParameters, )
+	SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FSceneTextureUniformParameters, SceneTextures)
+	RENDER_TARGET_BINDING_SLOTS()
+END_SHADER_PARAMETER_STRUCT()
+
+
+#define NAGA_SHADINGMODELID_MASK					0xF		// 4 bits reserved for ShadingModelID
+// DeferredShadingCommon.ush
+float Naga_EncodeShadingModelIdAndSelectiveOutputMask(uint32 ShadingModelId, uint32 SelectiveOutputMask)
 {
-	
-	if (IsValid(WorldSubsystem))
-	{
-	}
-	else
+	uint32 Value = (ShadingModelId & NAGA_SHADINGMODELID_MASK) | SelectiveOutputMask;
+	return (float)Value / (float)0xFF;
+}
+void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder& GraphBuilder, FSceneView& InView, const FRenderTargetBindingSlots& RenderTargets, TRDGUniformBufferRef<FSceneTextureUniformParameters> SceneTextures)
+{
+	if (!IsValid(WorldSubsystem))
 	{
 		return;
 	}
 
+	/*
+	GBUfferレイアウト -> DeferredShadingCommon.ush EncodeGBuffer()
+	ShadingModelID -> ShadingCommon.ush
+
+
+	OutGBufferA.rgb = EncodeNormal( GBuffer.WorldNormal );
+	OutGBufferA.a = GBuffer.PerObjectGBufferData;
+	
+	OutGBufferB.r = GBuffer.Metallic;
+	OutGBufferB.g = GBuffer.Specular;
+	OutGBufferB.b = GBuffer.Roughness;
+	OutGBufferB.a = EncodeShadingModelIdAndSelectiveOutputMask(GBuffer.ShadingModelID, GBuffer.SelectiveOutputMask);
+
+	OutGBufferC.rgb = EncodeBaseColor( GBuffer.BaseColor );
+	OutGBufferC.a = GBuffer.GBufferAO;
+	
+	OutGBufferD = GBuffer.CustomData;
+	OutGBufferE = GBuffer.PrecomputedShadowFactors;
+	
+	*/
+
+	/*
+	RenderTargets の内訳.
+	
+	RenderTargets[0] : SceneColor
+	RenderTargets[1] : GBUfferA
+	RenderTargets[2] : GBUfferB
+	RenderTargets[3] : GBUfferC
+	RenderTargets[4] : GBUfferD
+	RenderTargets[5] : GBUfferE
+	*/
+	/*
+	 GBufferB.a のShadingModelIDは Naga_EncodeShadingModelIdAndSelectiveOutputMask(1, 0)) で生成する.	
+	*/
+	
+	// GBufferクリアテスト.
+	// GBUfferB をクリアしてaチャンネルのShadingModelIDを書き換えるテスト. 成功.
+	constexpr uint32 ShadingModelID_Unlit = 0;
+	constexpr uint32 OverrideShadingModelID = ShadingModelID_Unlit;
+	AddClearRenderTargetPass(GraphBuilder, RenderTargets[2].GetTexture(), FLinearColor(1,0,0.5, Naga_EncodeShadingModelIdAndSelectiveOutputMask(OverrideShadingModelID, 0)));
+	
+	
+	
+}
+/**
+ * Called right before Post Processing rendering begins
+ */
+void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
+{
+	if (!IsValid(WorldSubsystem))
+	{
+		return;
+	}
 	// チェック.
 	Inputs.Validate();
 
@@ -92,7 +158,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			TShaderMapRef<FViewExtensionSampleShaderPs> PixelShader(GlobalShaderMap);
 
 			FViewExtensionSampleShaderPs::FParameters* Parameters = GraphBuilder.AllocParameters<FViewExtensionSampleShaderPs::FParameters>();
-			Parameters->ViewExtensionSample_FloatParam = tmp_counter - floor(tmp_counter);
+			Parameters->ViewExtensionSample_FloatParam = (tmp_counter - floor(tmp_counter))*0.2f;
 			Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
 
 			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
