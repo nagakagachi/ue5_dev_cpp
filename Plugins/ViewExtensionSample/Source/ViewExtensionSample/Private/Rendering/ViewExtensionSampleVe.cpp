@@ -51,7 +51,6 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 		return;
 	}
 
-	
 	FScreenPassTexture ScreenPassTex(SceneTextures->GetParameters()->GBufferATexture);
 	RDG_EVENT_SCOPE(GraphBuilder, "FViewExtensionSampleVe::PostRenderBasePassDeferred %dx%d", ScreenPassTex.ViewRect.Width(), ScreenPassTex.ViewRect.Height());
 	
@@ -92,12 +91,43 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	
 	// GBufferクリアテスト.
 	// GBUfferB をクリアしてaチャンネルのShadingModelIDを書き換えるテスト. 成功.
+#if 0
 	constexpr uint32 ShadingModelID_Unlit = 0;
 	constexpr uint32 OverrideShadingModelID = ShadingModelID_Unlit;
 	AddClearRenderTargetPass(GraphBuilder, RenderTargets[2].GetTexture(), FLinearColor(1,0,0.5, Naga_EncodeShadingModelIdAndSelectiveOutputMask(OverrideShadingModelID, 0)));
-	
-	
-	
+#endif
+
+	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
+#if 1
+	{
+		TShaderMapRef<FViewExtensionSamplePostBasePassShaderVs> VertexShader(GlobalShaderMap);
+		TShaderMapRef<FViewExtensionSamplePostBasePassShaderPs> PixelShader(GlobalShaderMap);
+
+		static float tmp_counter = 0.0f;
+		tmp_counter += 1.0f / 60.0f;
+		if(65535.0f < tmp_counter) tmp_counter = 0.0f;
+		
+		FViewExtensionSamplePostBasePassShader::FParameters* Parameters = GraphBuilder.AllocParameters<FViewExtensionSamplePostBasePassShader::FParameters>();
+		Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
+		Parameters->RenderTargets[0] = RenderTargets[3];
+		
+		const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
+		FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha, BO_Add, BF_Zero, BF_One>::GetRHI();
+		
+		const FScreenPassTextureViewport RegionViewport(GetAsTexture(RenderTargets[3].GetTexture()), PrimaryViewRect);
+		AddDrawScreenPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("NagaViewExtensionPass01"),
+			InView,
+			RegionViewport,
+			RegionViewport,
+			VertexShader,
+			PixelShader,
+			BlendState,
+			Parameters
+		);
+	}
+#endif
 }
 /**
  * Called right before Post Processing rendering begins
@@ -139,14 +169,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		// Getting material data for the current view.
 		FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 
-		/*
-		FRDGTextureDesc TestOutputDesc = SceneColor.Texture->Desc;
-		TestOutputDesc.Format = PF_FloatRGBA;
-		FLinearColor ClearColor(0., 0., 0., 0.);
-		TestOutputDesc.ClearValue = FClearValueBinding(ClearColor);
-		FRDGTexture* OutputRenderTargetTexture = GraphBuilder.CreateTexture(TestOutputDesc, TEXT("ViewExtensionSampleTestOutput"));
-		*/
-		
 		//FScreenPassRenderTarget BackBufferRenderTarget = FScreenPassRenderTarget(OutputRenderTargetTexture, SceneColor.ViewRect, ERenderTargetLoadAction::EClear);
 		FScreenPassRenderTarget SceneColorRenderTarget(SceneColor, ERenderTargetLoadAction::ELoad);
 		{
