@@ -100,14 +100,14 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 #if 1
 	{
-		TShaderMapRef<FViewExtensionSamplePostBasePassShaderVs> VertexShader(GlobalShaderMap);
-		TShaderMapRef<FViewExtensionSamplePostBasePassShaderPs> PixelShader(GlobalShaderMap);
+		TShaderMapRef<FSamplePrePostProcessVs> VertexShader(GlobalShaderMap);
+		TShaderMapRef<FSamplePostBasePassWriteGBufferPs> PixelShader(GlobalShaderMap);
 
 		static float tmp_counter = 0.0f;
 		tmp_counter += 1.0f / 60.0f;
 		if(65535.0f < tmp_counter) tmp_counter = 0.0f;
 		
-		FViewExtensionSamplePostBasePassShader::FParameters* Parameters = GraphBuilder.AllocParameters<FViewExtensionSamplePostBasePassShader::FParameters>();
+		FSamplePostBasePassWriteGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePostBasePassWriteGBufferPs::FParameters>();
 		Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
 		Parameters->RenderTargets[0] = RenderTargets[3];
 		
@@ -177,10 +177,10 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			static float tmp_counter = 0.0f;
 			tmp_counter += 1.0f / 120.0f;;
 			
-			TShaderMapRef<FViewExtensionSampleShaderVs> VertexShader(GlobalShaderMap);
-			TShaderMapRef<FViewExtensionSampleShaderPs> PixelShader(GlobalShaderMap);
+			TShaderMapRef<FSamplePrePostProcessVs> VertexShader(GlobalShaderMap);
+			TShaderMapRef<FSamplePrePostProcessPs> PixelShader(GlobalShaderMap);
 
-			FViewExtensionSampleShaderPs::FParameters* Parameters = GraphBuilder.AllocParameters<FViewExtensionSampleShaderPs::FParameters>();
+			FSamplePrePostProcessPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePrePostProcessPs::FParameters>();
 			Parameters->ViewExtensionSample_FloatParam = (tmp_counter - floor(tmp_counter))*0.2f;
 			Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
 
