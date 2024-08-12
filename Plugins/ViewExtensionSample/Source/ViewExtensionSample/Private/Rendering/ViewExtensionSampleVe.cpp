@@ -89,23 +89,25 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	 GBufferB.a のShadingModelIDは Naga_EncodeShadingModelIdAndSelectiveOutputMask(1, 0)) で生成する.	
 	*/
 	
-	// GBufferクリアテスト.
-	// GBUfferB をクリアしてaチャンネルのShadingModelIDを書き換えるテスト. 成功.
+	static float tmp_counter = 0.0f;
+	tmp_counter += 1.0f / 60.0f;
+	if(65535.0f < tmp_counter) tmp_counter = 0.0f;
+	
 #if 0
+	// GBufferクリアテスト.
+	// GBUfferB をクリアしてaチャンネルのShadingModelIDを書き換えるテスト.
 	constexpr uint32 ShadingModelID_Unlit = 0;
 	constexpr uint32 OverrideShadingModelID = ShadingModelID_Unlit;
 	AddClearRenderTargetPass(GraphBuilder, RenderTargets[2].GetTexture(), FLinearColor(1,0,0.5, Naga_EncodeShadingModelIdAndSelectiveOutputMask(OverrideShadingModelID, 0)));
 #endif
 
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
-#if 1
+	
+#if 0
+	// GBufferへの書き込みテスト.
 	{
-		TShaderMapRef<FSamplePrePostProcessVs> VertexShader(GlobalShaderMap);
+		TShaderMapRef<FSamplePostBasePassWriteGBufferVs> VertexShader(GlobalShaderMap);
 		TShaderMapRef<FSamplePostBasePassWriteGBufferPs> PixelShader(GlobalShaderMap);
-
-		static float tmp_counter = 0.0f;
-		tmp_counter += 1.0f / 60.0f;
-		if(65535.0f < tmp_counter) tmp_counter = 0.0f;
 		
 		FSamplePostBasePassWriteGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePostBasePassWriteGBufferPs::FParameters>();
 		Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
@@ -117,7 +119,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 		const FScreenPassTextureViewport RegionViewport(GetAsTexture(RenderTargets[3].GetTexture()), PrimaryViewRect);
 		AddDrawScreenPass(
 			GraphBuilder,
-			RDG_EVENT_NAME("NagaViewExtensionPass01"),
+			RDG_EVENT_NAME("Naga_GBufferWriteTest"),
 			InView,
 			RegionViewport,
 			RegionViewport,
@@ -128,6 +130,61 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 		);
 	}
 #endif
+	
+#if 1
+	// GBufferを読み取り用にワークバッファへコピーして読み取りしてGBuffer書き込みをするテスト.
+	//	GBuffer->ワークバッファへCopy->ワークバッファを読み取り利用してGBuffer書き込み.
+	{
+		// PostBasePassではSceneTexturesのGBuffer参照は空なのでRenderTargets側のGBufferを利用する.
+		FRDGTextureRef target_gbuffer_texture = RenderTargets[3].GetTexture();
+
+		// Create WorkBuffer.
+		FRDGTextureRef new_gbuffer_texture = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				target_gbuffer_texture->Desc.Extent ,
+				target_gbuffer_texture->Desc.Format,
+				{},//target_gbuffer_texture->Desc.ClearValue,
+				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable
+			), TEXT("Naga_GBufferTexture"));
+		
+		// GBuffer -> WorkBuffer.
+		{
+			FRHICopyTextureInfo copy_info{};
+			AddCopyTexturePass(GraphBuilder, target_gbuffer_texture, new_gbuffer_texture, copy_info);
+		}
+		
+		{
+			TShaderMapRef<FSamplePostBasePassReadGBufferVs> VertexShader(GlobalShaderMap);
+			TShaderMapRef<FSamplePostBasePassReadGBufferPs> PixelShader(GlobalShaderMap);
+
+			
+			FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+			
+			FSamplePostBasePassReadGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePostBasePassReadGBufferPs::FParameters>();
+			Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
+			Parameters->tex_screen_gbuffer_c = new_gbuffer_texture;
+			Parameters->tex_screen_gbuffer_c_Sampler = PointClampSampler;
+			Parameters->RenderTargets[0] = RenderTargets[3];
+			
+			const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
+			FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_One, BF_Zero, BO_Add, BF_One, BF_Zero>::GetRHI();
+			
+			const FScreenPassTextureViewport RegionViewport(GetAsTexture(RenderTargets[3].GetTexture()), PrimaryViewRect);
+			AddDrawScreenPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Naga_GBufferReadTest"),
+				InView,
+				RegionViewport,
+				RegionViewport,
+				VertexShader,
+				PixelShader,
+				BlendState,
+				Parameters
+			);
+		}
+	}
+#endif
+	
 }
 /**
  * Called right before Post Processing rendering begins
@@ -187,7 +244,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
 			AddDrawScreenPass(
 				GraphBuilder,
-				RDG_EVENT_NAME("NagaViewExtensionPass00"),
+				RDG_EVENT_NAME("Naga_PrePostProcessTest"),
 				View,
 				RegionViewport,
 				RegionViewport,

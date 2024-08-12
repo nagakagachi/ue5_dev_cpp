@@ -17,7 +17,8 @@ void MainVS(
 }
 
 float4 MainPS(
-	noperspective float4 UVAndScreenPos : TEXCOORD0
+	noperspective float4 UVAndScreenPos : TEXCOORD0,
+	float4 OutPosition : SV_POSITION
 	) : SV_TARGET0
 {
 

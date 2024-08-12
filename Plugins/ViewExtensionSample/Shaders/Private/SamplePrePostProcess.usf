@@ -17,8 +17,16 @@ void MainVS(
 }
 
 float4 MainPS(
-	noperspective float4 UVAndScreenPos : TEXCOORD0
+	noperspective float4 UVAndScreenPos : TEXCOORD0,
+	float4 OutPosition : SV_POSITION
 	) : SV_TARGET0
 {
-	return float4(UVAndScreenPos.x, UVAndScreenPos.y, 0.0, 0.5 * step(UVAndScreenPos.x, ViewExtensionSample_FloatParam));
+	const float2 dist_from_center = abs(UVAndScreenPos.xy - 0.5);
+
+	float alpha = 0.0;
+	if(any(0.45 < dist_from_center))
+	{
+		alpha = 1.0;
+	}
+	return float4(UVAndScreenPos.x, UVAndScreenPos.y, 0.0, alpha * ViewExtensionSample_FloatParam);
 }
