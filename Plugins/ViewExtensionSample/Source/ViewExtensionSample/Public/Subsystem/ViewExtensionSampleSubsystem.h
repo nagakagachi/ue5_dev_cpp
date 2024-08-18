@@ -20,11 +20,14 @@ public:
 	// Subsystem Init/Deinit
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	
 public:
 
 private:
 	TSharedPtr< class FViewExtensionSampleVe, ESPMode::ThreadSafe > p_view_extension;
 
+	static bool exist_viewextension_instance;
+	
 public:
 	friend class FViewExtensionSampleVe;
 };

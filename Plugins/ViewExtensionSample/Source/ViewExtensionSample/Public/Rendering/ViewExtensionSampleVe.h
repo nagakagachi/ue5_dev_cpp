@@ -31,4 +31,6 @@ public:
 	
 private:
 	UViewExtensionSampleSubsystem* WorldSubsystem;
+
+	FRDGTextureRef	FrameExtendGBuffer{};
 };

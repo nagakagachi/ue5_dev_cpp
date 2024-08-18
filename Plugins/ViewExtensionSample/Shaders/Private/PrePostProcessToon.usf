@@ -1,0 +1,56 @@
+// PrePostProcessToon.usf
+
+#include "/Engine/Private/Common.ush"
+
+#include "/Engine/Private/DeferredShadingCommon.ush"
+
+
+// Param
+float list_shadow_threshold;
+
+SamplerState sampler_screen;
+
+Texture2D tex_scene_color;
+Texture2D tex_gbuffer_b_custom;
+
+
+// EngineのDrawScreenPassを利用し, 自動でDrawRectangle関連のParameterが割り当てられる想定.
+void MainVS(
+	in float4 InPosition : ATTRIBUTE0,
+	in float2 InTexcoord : ATTRIBUTE1,
+
+	out noperspective float4 OutUVAndScreenPos : TEXCOORD0,
+	out float4 OutPosition : SV_POSITION)
+{
+	DrawRectangle(InPosition, InTexcoord, OutPosition, OutUVAndScreenPos);
+}
+
+float4 MainPS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0,
+	float4 OutPosition : SV_POSITION
+	) : SV_TARGET0
+{
+	float2 UV = UVAndScreenPos.xy;
+
+	float4 gbuffer_b_value = Texture2DSample(tex_gbuffer_b_custom, sampler_screen, UV);
+	uint shading_model = DecodeShadingModelId(gbuffer_b_value.a);
+	uint selective_output_mask = DecodeSelectiveOutputMask(gbuffer_b_value.a);
+
+	float4 scene_color = Texture2DSample(tex_scene_color, sampler_screen, UV);
+
+
+	if(0.15 > UV.x)
+	{
+		return scene_color;
+	}
+	
+	const uint k_test_shading_model_id = 15;
+	if(shading_model == k_test_shading_model_id)
+	{
+		return scene_color;
+		//return float4(UV, 0, 0.5);
+	}
+	
+	float lit = step(list_shadow_threshold, Luminance(scene_color.rgb));
+	return float4(lit, lit, lit, 1);
+}
