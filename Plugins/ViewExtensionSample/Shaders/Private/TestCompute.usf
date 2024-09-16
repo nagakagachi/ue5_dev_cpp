@@ -1,0 +1,80 @@
+// PrePostProcessToon.usf
+
+#include "/Engine/Private/Common.ush"
+
+#if !defined(SHADER_ENTRY_POINT_MODE)
+#define SHADER_ENTRY_POINT_MODE 1
+#endif
+
+#if 0 == SHADER_ENTRY_POINT_MODE
+
+	Texture2D SourceTexture;
+	uint2 SourceDimensions;
+	SamplerState SourceSampler;
+
+	RWTexture2D<float4> OutputTexture;
+	uint2 OutputDimensions;
+
+	[numthreads(THREADGROUPSIZE_X,THREADGROUPSIZE_Y,THREADGROUPSIZE_Z)]
+	void MainCS(
+		uint3 Gid	: SV_GroupID,
+		uint3 DTid	: SV_DispatchThreadID,
+		uint3 GTid	: SV_GroupThreadID,
+		uint Gi		: SV_GroupIndex
+		)
+	{
+		float4 source_color = SourceTexture.Load(uint3(DTid.xy, 0));
+
+		float dot_value = dot(float2(1,1), DTid.xy / 4) % 2;
+
+		// 適当にドットで表示.
+		//OutputTexture[DTid.xy] = source_color * dot_value;
+		OutputTexture[DTid.xy] = source_color;
+	}
+
+#endif
+
+
+
+#if 1 == SHADER_ENTRY_POINT_MODE
+
+	Texture2D SceneDepthTexture;
+	uint2 SourceDimensions;
+	SamplerState SourceSampler;
+
+	RWTexture2D<float> OutputTexture;
+	uint2 OutputDimensions;
+
+	float DepthEdgeCoef;
+
+	[numthreads(THREADGROUPSIZE_X,THREADGROUPSIZE_Y,THREADGROUPSIZE_Z)]
+	void MainCS(
+		uint3 Gid	: SV_GroupID,
+		uint3 DTid	: SV_DispatchThreadID,
+		uint3 GTid	: SV_GroupThreadID,
+		uint Gi		: SV_GroupIndex
+		)
+	{
+		float device_depth = SceneDepthTexture.Load(uint3(DTid.xy, 0)).x;
+		// View空間深度変換. ViewUniformBufferを要求する.
+		float view_depth = ConvertFromDeviceZ(device_depth);
+		float vd0 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, -1), 0)).x);
+		float vd1 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(0, -1), 0)).x);
+		float vd2 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(1, -1), 0)).x);
+		float vd3 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, 0), 0)).x);
+		float vd4 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(1, 0), 0)).x);
+		float vd5 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, 1), 0)).x);
+		float vd6 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(0, 1), 0)).x);
+		float vd7 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(1, 1), 0)).x);
+
+		const float depth_raplacian_filter = (vd0+vd1+vd2+vd3+vd4+vd5+vd6+vd7) - (8*view_depth); 
+
+		const float depth_edge_sign = sign(depth_raplacian_filter);
+		const float depth_edge_value = step(DepthEdgeCoef * view_depth, abs(depth_raplacian_filter));
+		// 深度購買の上端(近景の外側)を採用している.
+		const float depth_edge_mask = saturate(-depth_edge_sign * depth_edge_value);
+
+		OutputTexture[DTid.xy] = depth_edge_mask;
+	}
+#endif
+

@@ -104,3 +104,87 @@ class FPrePostProcessToonPs : public FPrePostProcessToon
 public:
 	DECLARE_GLOBAL_SHADER(FPrePostProcessToonPs);
 };
+
+
+
+class FTestCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FTestCS);
+	SHADER_USE_PARAMETER_STRUCT(FTestCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
+		SHADER_PARAMETER(FUintVector2, SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		
+		OutEnvironment.SetDefine(TEXT("SHADER_ENTRY_POINT_MODE"), 0);// エントリポイント指定.
+		
+		// Thread Group数マクロ指定.
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+	}
+};
+
+class FImageProcessTestCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FImageProcessTestCS);
+	SHADER_USE_PARAMETER_STRUCT(FImageProcessTestCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+	
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneDepthTexture)
+		SHADER_PARAMETER(FUintVector2, SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+
+		SHADER_PARAMETER(float, DepthEdgeCoef)
+	
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		
+		OutEnvironment.SetDefine(TEXT("SHADER_ENTRY_POINT_MODE"), 1);// エントリポイント指定.
+		
+		// Thread Group数マクロ指定.
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+	}
+};

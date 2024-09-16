@@ -21,7 +21,10 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 		auto* subsystem = GEngine->GetEngineSubsystem<UViewExtensionSampleSubsystem>();
 		if(subsystem)
 		{
+			subsystem->enable_test_compute = enable_test_compute;
 			subsystem->enable_gbuffer_modify = enable_gbuffer_modify;
+			
+			subsystem->depth_edge_coef = depth_edge_coef;
 		}
 	}
 }

@@ -212,13 +212,12 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	// Getting material data for the current view.
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
+	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+	
+	const auto& input_scene_textures = Inputs.SceneTextures->GetParameters();
 	// ToonPass.
 	if(WorldSubsystem->enable_gbuffer_modify)
 	{
-		FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
-		
-		const auto& input_scene_textures = Inputs.SceneTextures->GetParameters();
-
 		// Reusing the same output description for our back buffer as SceneColor
 		FRDGTextureDesc WorkOutputDesc = {};;
 		{
@@ -232,12 +231,11 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		FRDGTexture* WorkTexture = GraphBuilder.CreateTexture(WorkOutputDesc, TEXT("NagaViewExtensionPrePostProcessWorkTexture"));
 		FScreenPassRenderTarget WorkTextureRenderTarget = FScreenPassRenderTarget(WorkTexture, SceneColor.ViewRect, ERenderTargetLoadAction::ENoAction);
 
-		// SceneColor->Work
+		// copy SceneColor->Work
 		{
 			FRHICopyTextureInfo copy_info{};
 			AddCopyTexturePass(GraphBuilder, input_scene_textures->SceneColorTexture, WorkTexture, copy_info);
 		}
-		
 		
 		{
 			FScreenPassRenderTarget SceneColorRenderTarget(input_scene_textures->SceneColorTexture, ERenderTargetLoadAction::ELoad);
@@ -272,6 +270,86 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				BlendState,
 				Parameters
 			);
+		}
+	}
+
+	
+	if(WorldSubsystem->enable_test_compute)
+	{
+		FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
+		
+		// Work作成.
+		FRDGTexture* WorkUavTexture0{};
+		{
+			FRDGTextureDesc WorkUavTexDesc = {};;
+			{
+				const auto scene_color_desc = SceneColor.Texture->Desc;
+				WorkUavTexDesc = FRDGTextureDesc::Create2D(
+					scene_color_desc.Extent, PF_R16F, scene_color_desc.ClearValue,
+					ETextureCreateFlags::ShaderResource|ETextureCreateFlags::UAV
+					);
+			}
+			WorkUavTexture0 = GraphBuilder.CreateTexture(WorkUavTexDesc, TEXT("NagaWorkTexture"));
+		}
+		
+		{
+			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(WorkUavTexture0);
+			FImageProcessTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FImageProcessTestCS::FParameters>();
+			{
+				Parameters->View = View.ViewUniformBuffer;// DeviceDepth to ViewDepth変換等のため.
+				
+				Parameters->SceneDepthTexture = input_scene_textures->SceneDepthTexture;
+				Parameters->SourceDimensions = WorkRect;
+				Parameters->SourceSampler = PointClampSampler;
+
+				Parameters->OutputTexture = WorkUav;
+				Parameters->SourceDimensions = WorkRect;
+
+				Parameters->DepthEdgeCoef = WorldSubsystem->depth_edge_coef;
+			}
+		
+			TShaderMapRef<FImageProcessTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+
+		{
+			// SceneColor をコピーするための Work Textureを作成.
+			FRDGTextureDesc WorkSceneColorDesc = {};;
+			{
+				const auto scene_color_desc = SceneColor.Texture->Desc;
+				WorkSceneColorDesc = FRDGTextureDesc::Create2D(
+					scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
+					ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable
+					);
+			}
+			FRDGTexture* WorkSceneColorTexture = GraphBuilder.CreateTexture(WorkSceneColorDesc, TEXT("NagaWorkTexture"));
+			// SceneColorを Workへコピー.
+			{
+				FRHICopyTextureInfo copy_info{};
+				AddCopyTexturePass(GraphBuilder, SceneColor.Texture, WorkSceneColorTexture, copy_info);
+			}
+
+			FRDGTextureUAVRef SceneColorUav = GraphBuilder.CreateUAV(SceneColor.Texture);
+			FTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FTestCS::FParameters>();
+			{
+				Parameters->SourceTexture = WorkUavTexture0;//WorkSceneColorTexture;
+				Parameters->SourceSampler = PointClampSampler;
+				Parameters->SourceDimensions = WorkRect;
+
+				Parameters->OutputTexture = SceneColorUav;
+				Parameters->SourceDimensions = WorkRect;
+			}
+		
+			TShaderMapRef<FTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 		}
 	}
 }

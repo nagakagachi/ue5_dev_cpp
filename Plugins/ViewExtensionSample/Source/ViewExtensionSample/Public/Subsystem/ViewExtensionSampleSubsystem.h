@@ -30,7 +30,14 @@ public:
 
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	bool enable_test_compute = true;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	bool enable_gbuffer_modify = false;
+
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	float depth_edge_coef = 0.02f;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -50,5 +57,8 @@ private:
 public:
 	friend class FViewExtensionSampleVe;
 
-	bool enable_gbuffer_modify = 0;
+	bool enable_test_compute = false;
+	bool enable_gbuffer_modify = false;
+
+	float depth_edge_coef = 0.02f;
 };
