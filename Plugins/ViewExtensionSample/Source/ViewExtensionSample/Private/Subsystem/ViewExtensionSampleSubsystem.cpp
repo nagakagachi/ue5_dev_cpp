@@ -1,20 +1,38 @@
 
 
 #include "Subsystem/ViewExtensionSampleSubsystem.h"
+
+#include "K2Node_GetSubsystem.h"
 #include "Rendering/ViewExtensionSampleVe.h"
 
-bool UViewExtensionSampleSubsystem::exist_viewextension_instance = false;
+AViewExtensionSampleControlActor::AViewExtensionSampleControlActor()
+{
+	PrimaryActorTick.bCanEverTick = true;
+}
+void AViewExtensionSampleControlActor::BeginPlay()
+{
+	Super::BeginPlay();
+}
+void AViewExtensionSampleControlActor::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	{
+		auto* subsystem = GEngine->GetEngineSubsystem<UViewExtensionSampleSubsystem>();
+		if(subsystem)
+		{
+			subsystem->enable_gbuffer_modify = enable_gbuffer_modify;
+		}
+	}
+}
+
 
 void UViewExtensionSampleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	
-	// EditorとPlayで多重登録されないように対応.
-	if(!exist_viewextension_instance)
-	{
-		exist_viewextension_instance = true;
-		p_view_extension = FSceneViewExtensions::NewExtension<FViewExtensionSampleVe>(this);
-	}
+
+	p_view_extension = FSceneViewExtensions::NewExtension<FViewExtensionSampleVe>(this);
+
 	UE_LOG(LogTemp, Log, TEXT("[UViewExtensionSampleSubsystem] Initialize %p\n"), this);
 }
 
@@ -24,8 +42,6 @@ void UViewExtensionSampleSubsystem::Deinitialize()
 
 	if(p_view_extension)
 	{
-		exist_viewextension_instance = false;
-		
 		// Prevent this SVE from being gathered, in case it is kept alive by a strong reference somewhere else.
 		{
 			p_view_extension->IsActiveThisFrameFunctions.Empty();

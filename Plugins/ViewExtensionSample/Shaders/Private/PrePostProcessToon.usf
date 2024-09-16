@@ -11,7 +11,9 @@ float list_shadow_threshold;
 SamplerState sampler_screen;
 
 Texture2D tex_scene_color;
-Texture2D tex_gbuffer_b_custom;
+Texture2D tex_gbuffer_a;// normal
+Texture2D tex_gbuffer_b_custom;// pbr shadingmodel. カスタムパスで退避したもとのShadingModelを格納したGBuffer.
+Texture2D tex_gbuffer_c;// basecolor ao
 
 
 // EngineのDrawScreenPassを利用し, 自動でDrawRectangle関連のParameterが割り当てられる想定.
@@ -32,25 +34,59 @@ float4 MainPS(
 {
 	float2 UV = UVAndScreenPos.xy;
 
-	float4 gbuffer_b_value = Texture2DSample(tex_gbuffer_b_custom, sampler_screen, UV);
-	uint shading_model = DecodeShadingModelId(gbuffer_b_value.a);
-	uint selective_output_mask = DecodeSelectiveOutputMask(gbuffer_b_value.a);
-
+	const float4 gbuffer_b_value = Texture2DSample(tex_gbuffer_b_custom, sampler_screen, UV);
+	const uint shading_model = DecodeShadingModelId(gbuffer_b_value.a);
+	const uint selective_output_mask = DecodeSelectiveOutputMask(gbuffer_b_value.a);
+	const float gb_metallic = gbuffer_b_value.r;
+	const float gb_specular = gbuffer_b_value.g;
+	const float gb_roughness = gbuffer_b_value.b;
+	
 	float4 scene_color = Texture2DSample(tex_scene_color, sampler_screen, UV);
-
-
-	if(0.15 > UV.x)
-	{
-		return scene_color;
-	}
 	
+	// 疑似ShadingModelフィルタリング.
 	const uint k_test_shading_model_id = 15;
-	if(shading_model == k_test_shading_model_id)
+	if(shading_model != k_test_shading_model_id)
+	{
+		return scene_color;// 早期リターン.
+	}
+
+#if 0
+	// デバッグ用.
+	if(0.2 > UV.x)
 	{
 		return scene_color;
-		//return float4(UV, 0, 0.5);
 	}
 	
-	float lit = step(list_shadow_threshold, Luminance(scene_color.rgb));
-	return float4(lit, lit, lit, 1);
+	const float4 gbuffer_a_value = Texture2DSample(tex_gbuffer_a, sampler_screen, UV);
+	const float3 gb_normal = DecodeNormal(gbuffer_a_value.rgb);
+	const float4 gbuffer_c_value = Texture2DSample(tex_gbuffer_c, sampler_screen, UV);
+	const float3 gb_bc = gbuffer_c_value.rgb;
+
+	// lit / bc でライト輝度の抽出
+	const bool3 valid_bc = (0.001 < gb_bc);
+	const float3 bc_div = select(valid_bc, gb_bc, float3(1,1,1));
+	const float3 pseudo_irradiance = scene_color.rgb / bc_div;
+	const float lit_luminance = Luminance(pseudo_irradiance);
+
+	const float k_shade_thresh = 0.5;
+	const float lit_shade_mask = step(k_shade_thresh, gb_roughness);
+	
+	// Cast Shadowの検出.
+	const float lit_shadow_thres_mask = step(list_shadow_threshold, lit_luminance);
+	const float lit_shadow_mask = min(1.0, lit_shadow_thres_mask + (1.0 - lit_shade_mask));
+	
+	const float toon_shade_lit = min(lerp(0.05, 1.0, lit_shadow_mask), lerp(0.01, 1.0, lit_shade_mask));
+	if(0.5 < UV.x)
+	{
+		//return float4(1.0-lit_shade_mask, 1.0-lit_shadow_mask, 0, 1);
+		return float4(scene_color.rgb * toon_shade_lit, 1);
+	}
+	
+	return float4(gb_bc * toon_shade_lit, 1);
+#else
+	if(0.5 > UV.x)
+		return scene_color;
+	
+	return scene_color.bgra;// 適当にチャンネルシフト.
+#endif
 }

@@ -30,12 +30,12 @@ void FViewExtensionSampleVe::BeginRenderViewFamily(FSceneViewFamily& InViewFamil
 /**
  * Called right after Base Pass rendering finished when using the deferred renderer.
  */
-
+/*
 BEGIN_SHADER_PARAMETER_STRUCT(FViewExtensionSamplePreBasePassParameters, )
 	SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FSceneTextureUniformParameters, SceneTextures)
 	RENDER_TARGET_BINDING_SLOTS()
 END_SHADER_PARAMETER_STRUCT()
-
+*/
 
 #define NAGA_SHADINGMODELID_MASK					0xF		// 4 bits reserved for ShadingModelID
 // DeferredShadingCommon.ush
@@ -72,12 +72,10 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	
 	OutGBufferD = GBuffer.CustomData;
 	OutGBufferE = GBuffer.PrecomputedShadowFactors;
-	
 	*/
 
 	/*
 		RenderTargets の内訳.
-
 		RenderTargets[0] : SceneColor
 		RenderTargets[1] : GBUfferA
 		RenderTargets[2] : GBUfferB
@@ -98,101 +96,10 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	tmp_counter += 1.0f / 60.0f;
 	if(65535.0f < tmp_counter) tmp_counter = 0.0f;
 	
-#if 0
-	// GBufferクリアテスト.
-	// GBUfferB をクリアしてaチャンネルのShadingModelIDを書き換えるテスト.
-	constexpr uint32 ShadingModelID_Unlit = 0;
-	constexpr uint32 OverrideShadingModelID = ShadingModelID_Unlit;
-	AddClearRenderTargetPass(GraphBuilder, RenderTargets[RT_GB_PbrShadingModel].GetTexture(), FLinearColor(1,0,0.5, Naga_EncodeShadingModelIdAndSelectiveOutputMask(OverrideShadingModelID, 0)));
-#endif
-
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
-#if 0
-	// GBufferへの書き込みテスト.
-	{
-		TShaderMapRef<FSamplePostBasePassWriteGBufferVs> VertexShader(GlobalShaderMap);
-		TShaderMapRef<FSamplePostBasePassWriteGBufferPs> PixelShader(GlobalShaderMap);
-		
-		FSamplePostBasePassWriteGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePostBasePassWriteGBufferPs::FParameters>();
-		Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
-		Parameters->RenderTargets[0] = RenderTargets[RT_GB_BcAo];
-		
-		const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
-		FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha, BO_Add, BF_Zero, BF_One>::GetRHI();
-		
-		const FScreenPassTextureViewport RegionViewport(GetAsTexture(RenderTargets[RT_GB_BcAo].GetTexture()), PrimaryViewRect);
-		AddDrawScreenPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("Naga_GBufferWriteTest"),
-			InView,
-			RegionViewport,
-			RegionViewport,
-			VertexShader,
-			PixelShader,
-			BlendState,
-			Parameters
-		);
-	}
-#endif
-	
-#if 0
-	// GBufferを読み取り用にワークバッファへコピーして読み取りしてGBuffer書き込みをするテスト.
-	//	GBuffer->ワークバッファへCopy->ワークバッファを読み取り利用してGBuffer書き込み.
-	{
-		// PostBasePassではSceneTexturesのGBuffer参照は空なのでRenderTargets側のGBufferを利用する.
-		FRDGTextureRef target_gbuffer_texture = RenderTargets[RT_GB_BcAo].GetTexture();
-
-		// Create WorkBuffer.
-		FRDGTextureRef new_gbuffer_texture = GraphBuilder.CreateTexture(
-			FRDGTextureDesc::Create2D(
-				target_gbuffer_texture->Desc.Extent ,
-				target_gbuffer_texture->Desc.Format,
-				{},//target_gbuffer_texture->Desc.ClearValue,
-				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable
-			), TEXT("Naga_GBufferTexture"));
-		
-		// GBuffer -> WorkBuffer.
-		{
-			FRHICopyTextureInfo copy_info{};
-			AddCopyTexturePass(GraphBuilder, target_gbuffer_texture, new_gbuffer_texture, copy_info);
-		}
-		
-		{
-			TShaderMapRef<FSamplePostBasePassReadGBufferVs> VertexShader(GlobalShaderMap);
-			TShaderMapRef<FSamplePostBasePassReadGBufferPs> PixelShader(GlobalShaderMap);
-
-			
-			FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
-			
-			FSamplePostBasePassReadGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePostBasePassReadGBufferPs::FParameters>();
-			Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
-			Parameters->tex_screen_gbuffer_c = new_gbuffer_texture;
-			Parameters->tex_screen_gbuffer_c_Sampler = PointClampSampler;
-			Parameters->RenderTargets[0] = RenderTargets[RT_GB_BcAo];
-			
-			const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
-			FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_One, BF_Zero, BO_Add, BF_One, BF_Zero>::GetRHI();
-			
-			const FScreenPassTextureViewport RegionViewport(GetAsTexture(RenderTargets[RT_GB_BcAo].GetTexture()), PrimaryViewRect);
-			AddDrawScreenPass(
-				GraphBuilder,
-				RDG_EVENT_NAME("Naga_GBufferReadTest"),
-				InView,
-				RegionViewport,
-				RegionViewport,
-				VertexShader,
-				PixelShader,
-				BlendState,
-				Parameters
-			);
-		}
-	}
-#endif
-
-	
-#if 1
 	// GBuffer操作.
+	if(WorldSubsystem->enable_gbuffer_modify)
 	{
 		// PostBasePassではSceneTexturesのGBuffer参照は空なのでRenderTargets側のGBufferを利用する.
 		FRDGTextureRef gb_tex_pbr_shadingmodel = RenderTargets[RT_GB_PbrShadingModel].GetTexture();
@@ -215,13 +122,14 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable
 			), TEXT("Naga_GBuffer_C_Work"));
 		
-		// GBuffer -> WorkBuffer.
+		// Copy GBuffer -> WorkBuffer.
 		{
 			FRHICopyTextureInfo copy_info{};
 			AddCopyTexturePass(GraphBuilder, gb_tex_pbr_shadingmodel, new_gbuffer_tex_pbr_shadingmodel, copy_info);
 			AddCopyTexturePass(GraphBuilder, gb_tex_bc_ao, new_gbuffer_tex_bc_ao, copy_info);
 		}
 
+		// もとのShadingModelを格納したコピーGBuffer参照を保存.
 		FrameExtendGBuffer = new_gbuffer_tex_pbr_shadingmodel;
 		
 		{
@@ -239,6 +147,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 				Parameters->tex_gbuffer_b_custom = new_gbuffer_tex_pbr_shadingmodel;
 				Parameters->tex_gbuffer_c = new_gbuffer_tex_bc_ao;
 
+				// オリジナルのGBufferへ書き戻して修正する.
 				Parameters->RenderTargets[0] = RenderTargets[RT_GB_PbrShadingModel];
 				Parameters->RenderTargets[1] = RenderTargets[RT_GB_BcAo];
 			}
@@ -264,7 +173,6 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 			);
 		}
 	}
-#endif
 }
 /**
  * Called right before Post Processing rendering begins
@@ -304,42 +212,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	// Getting material data for the current view.
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
-#if 0
-	// PostProsess前パスでScreenPassとして任意VSPSを動作させるテスト.
-	{
-		//FScreenPassRenderTarget BackBufferRenderTarget = FScreenPassRenderTarget(OutputRenderTargetTexture, SceneColor.ViewRect, ERenderTargetLoadAction::EClear);
-		FScreenPassRenderTarget SceneColorRenderTarget(SceneColor, ERenderTargetLoadAction::ELoad);
-		{
-			FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha, BO_Add, BF_Zero, BF_One>::GetRHI();
-
-			static float tmp_counter = 0.0f;
-			tmp_counter += 1.0f / 120.0f;;
-			
-			TShaderMapRef<FSamplePrePostProcessVs> VertexShader(GlobalShaderMap);
-			TShaderMapRef<FSamplePrePostProcessPs> PixelShader(GlobalShaderMap);
-
-			FSamplePrePostProcessPs::FParameters* Parameters = GraphBuilder.AllocParameters<FSamplePrePostProcessPs::FParameters>();
-			Parameters->ViewExtensionSample_FloatParam = (tmp_counter - floor(tmp_counter))*0.2f;
-			Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
-
-			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
-			AddDrawScreenPass(
-				GraphBuilder,
-				RDG_EVENT_NAME("Naga_PrePostProcessTest"),
-				View,
-				RegionViewport,
-				RegionViewport,
-				VertexShader,
-				PixelShader,
-				BlendState,
-				Parameters
-			);
-		}
-	}
-#endif
-	
-#if 1
 	// ToonPass.
+	if(WorldSubsystem->enable_gbuffer_modify)
 	{
 		FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 		
@@ -368,20 +242,21 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		{
 			FScreenPassRenderTarget SceneColorRenderTarget(input_scene_textures->SceneColorTexture, ERenderTargetLoadAction::ELoad);
 			
-			FRHIBlendState* BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha, BO_Add, BF_Zero, BF_One>::GetRHI();
+			FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_One, BF_Zero, BO_Add, BF_Zero, BF_One>::GetRHI();
 
 			TShaderMapRef<FPrePostProcessToonVs> VertexShader(GlobalShaderMap);
 			TShaderMapRef<FPrePostProcessToonPs> PixelShader(GlobalShaderMap);
 
 			FPrePostProcessToonPs::FParameters* Parameters = GraphBuilder.AllocParameters<FPrePostProcessToonPs::FParameters>();
 			{
-				Parameters->list_shadow_threshold = 0.2;
+				Parameters->list_shadow_threshold = 0.499;
 
 				Parameters->sampler_screen = PointClampSampler;
 				
 				Parameters->tex_scene_color = WorkTexture;
-				//Parameters->tex_gbuffer_b = input_scene_textures->GBufferBTexture;
+				Parameters->tex_gbuffer_a = input_scene_textures->GBufferATexture;
 				Parameters->tex_gbuffer_b_custom = FrameExtendGBuffer;// PostBasePassで生成したRDGTextureを使用することをRDGに指示.
+				Parameters->tex_gbuffer_c = input_scene_textures->GBufferCTexture;
 
 				Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
 			}
@@ -399,7 +274,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			);
 		}
 	}
-#endif
 }
 
 

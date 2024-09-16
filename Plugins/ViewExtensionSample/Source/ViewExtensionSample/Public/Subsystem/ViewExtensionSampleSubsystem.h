@@ -11,8 +11,31 @@
 
 #include "ViewExtensionSampleSubsystem.generated.h"
 
+
+class UViewExtensionSampleSubsystem;
+
+// Subsystemへのパラメータ設定用Actor.
 UCLASS()
-class UViewExtensionSampleSubsystem : public UWorldSubsystem
+class AViewExtensionSampleControlActor : public AActor
+{
+	GENERATED_BODY()
+protected:
+	virtual void BeginPlay() override;
+	
+public:
+	AViewExtensionSampleControlActor();
+	
+	virtual bool ShouldTickIfViewportsOnly() const override { return true; };
+	virtual void Tick(float DeltaSeconds) override;
+
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	bool enable_gbuffer_modify = false;
+};
+
+// ViewExtensionインスタンス管理用Subsystem.
+UCLASS()
+class UViewExtensionSampleSubsystem : public UEngineSubsystem /*UWorldSubsystem*/
 {
 	GENERATED_BODY()
 public:
@@ -20,14 +43,12 @@ public:
 	// Subsystem Init/Deinit
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-	
-public:
 
 private:
 	TSharedPtr< class FViewExtensionSampleVe, ESPMode::ThreadSafe > p_view_extension;
 
-	static bool exist_viewextension_instance;
-	
 public:
 	friend class FViewExtensionSampleVe;
+
+	bool enable_gbuffer_modify = 0;
 };

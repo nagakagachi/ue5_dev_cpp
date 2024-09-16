@@ -75,11 +75,16 @@ PsOut MainPS(
 	ps_output.bc_ao = gbuffer_c_value;
 	
 	// テスト用のShadingModelのピクセルをUnlit扱いにして書き戻す.
-	//	DefaultLitマテリアルでShadingModelをハックした値にしておき, ここでそのピクセルだけ特殊処理をする.
-	//ps_output.pbr_shadingmodel.a = EncodeShadingModelIdAndSelectiveOutputMask(SHADINGMODELID_UNLIT, selective_output_mask);
-	ps_output.pbr_shadingmodel.a = EncodeShadingModelIdAndSelectiveOutputMask(SHADINGMODELID_DEFAULT_LIT, selective_output_mask);
+	//	DefaultLitマテリアルで出力ShadingModelをハックしてUnlitではない値(15等)の値にすることでGBufferが書き込まれ、ここで実際にShadingMdelの値をUnlitに書き換えることでPostProcess段階でGBufferのあるUnlitのようにできる.
+	ps_output.pbr_shadingmodel.a = EncodeShadingModelIdAndSelectiveOutputMask(SHADINGMODELID_UNLIT, selective_output_mask);
+	// 今回はDefaultLitに戻しておく.
+	//ps_output.pbr_shadingmodel.a = EncodeShadingModelIdAndSelectiveOutputMask(SHADINGMODELID_DEFAULT_LIT, selective_output_mask);
+	// Metallic, Specular, Roughness.
+	//ps_output.pbr_shadingmodel.r = 0;
+	//ps_output.pbr_shadingmodel.g = 0;
+	//ps_output.pbr_shadingmodel.b = 1;
 
-	//ps_output.bc_ao = float4(1,1,1,1);
+	//ps_output.bc_ao.rgb = float3(1,1,1);// BC書き換え.
 
 	return ps_output;
 }
