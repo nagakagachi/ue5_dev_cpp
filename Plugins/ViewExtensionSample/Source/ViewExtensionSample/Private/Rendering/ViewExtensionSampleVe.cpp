@@ -8,6 +8,8 @@
 
 #include "Subsystem/ViewExtensionSampleSubsystem.h"
 
+#include <bit>
+
 FViewExtensionSampleVe::FViewExtensionSampleVe(const FAutoRegister& AutoRegister, UViewExtensionSampleSubsystem* InWorldSubsystem)
 	: FSceneViewExtensionBase(AutoRegister), WorldSubsystem(InWorldSubsystem)
 {
@@ -279,21 +281,28 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
 		
 		// Work作成.
-		FRDGTexture* WorkUavTexture0{};
+		FRDGTexture* VoronoiWorkUavTexture0{};
+		FRDGTexture* VoronoiWorkUavTexture1{};
+		FRDGTextureDesc VoronoiWorkUavTexDesc = {};;
 		{
-			FRDGTextureDesc WorkUavTexDesc = {};;
 			{
+				//const EPixelFormat work_format = PF_R32G32B32F;
+				const EPixelFormat work_format = PF_FloatRGB;
+				
 				const auto scene_color_desc = SceneColor.Texture->Desc;
-				WorkUavTexDesc = FRDGTextureDesc::Create2D(
-					scene_color_desc.Extent, PF_R16F, scene_color_desc.ClearValue,
+				// R16B16_Floatが望ましいがUEで選択できないため R32G32B32_Float 等としている. Shader側RWTextureの型と合わせることに注意.
+				VoronoiWorkUavTexDesc = FRDGTextureDesc::Create2D(
+					scene_color_desc.Extent, work_format, scene_color_desc.ClearValue,
 					ETextureCreateFlags::ShaderResource|ETextureCreateFlags::UAV
 					);
 			}
-			WorkUavTexture0 = GraphBuilder.CreateTexture(WorkUavTexDesc, TEXT("NagaWorkTexture"));
+			VoronoiWorkUavTexture0 = GraphBuilder.CreateTexture(VoronoiWorkUavTexDesc, TEXT("NagaWorkTexture0"));
+			VoronoiWorkUavTexture1 = GraphBuilder.CreateTexture(VoronoiWorkUavTexDesc, TEXT("NagaWorkTexture1"));
 		}
-		
+
+		// edge.
 		{
-			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(WorkUavTexture0);
+			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(VoronoiWorkUavTexture0);
 			FImageProcessTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FImageProcessTestCS::FParameters>();
 			{
 				Parameters->View = View.ViewUniformBuffer;// DeviceDepth to ViewDepth変換等のため.
@@ -303,7 +312,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->SourceSampler = PointClampSampler;
 
 				Parameters->OutputTexture = WorkUav;
-				Parameters->SourceDimensions = WorkRect;
+				Parameters->OutputDimensions = WorkRect;
 
 				Parameters->DepthEdgeCoef = WorldSubsystem->depth_edge_coef;
 			}
@@ -316,6 +325,75 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 		}
 
+		// voronoi.
+		FRDGTexture* work_buffers[] =
+		{
+			VoronoiWorkUavTexture0,
+			VoronoiWorkUavTexture1
+		};
+		
+		int last_work_index = 0;
+		{
+			// 初回パス.
+			{
+				const int src_index = last_work_index;;
+				last_work_index = 1 - last_work_index;
+				
+				FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(work_buffers[last_work_index]);
+				FVoronoiJumpFloodingCS::FParameters* Parameters = GraphBuilder.AllocParameters<FVoronoiJumpFloodingCS::FParameters>();
+				{
+					Parameters->VoronoiWorkTexture = work_buffers[src_index];
+					Parameters->VoronoiWorkTextureDimensions = WorkRect;
+					Parameters->VoronoiWorkTextureSampler = PointClampSampler;
+
+					Parameters->OutputTexture = WorkUav;
+					Parameters->OutputDimensions = WorkRect;
+
+					Parameters->IsJumpFloodingFirstPass = 1;
+					Parameters->JumpFloodingStepSize = 1;
+				}
+		
+				TShaderMapRef<FVoronoiJumpFloodingCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+				FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+						FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+			}
+			
+			const int JfaTargetSize = std::max(WorkRect.X, WorkRect.Y);
+			const int JfaStepCount = log2(JfaTargetSize) - 1;
+			// 反復.
+			for(int jfa_step = 0; jfa_step < JfaStepCount; ++jfa_step)
+			{
+				const int jfa_step_size = pow(2, JfaStepCount - jfa_step);
+				
+				const int src_index = last_work_index;;
+				last_work_index = 1 - last_work_index;
+				
+				FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(work_buffers[last_work_index]);
+				FVoronoiJumpFloodingCS::FParameters* Parameters = GraphBuilder.AllocParameters<FVoronoiJumpFloodingCS::FParameters>();
+				{
+					Parameters->VoronoiWorkTexture = work_buffers[src_index];
+					Parameters->VoronoiWorkTextureDimensions = WorkRect;
+					Parameters->VoronoiWorkTextureSampler = PointClampSampler;
+
+					Parameters->OutputTexture = WorkUav;
+					Parameters->OutputDimensions = WorkRect;
+
+					Parameters->IsJumpFloodingFirstPass = 0;
+					Parameters->JumpFloodingStepSize = jfa_step_size;
+				}
+		
+				TShaderMapRef<FVoronoiJumpFloodingCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+				FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+						FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+			}
+		}
+		
 		{
 			// SceneColor をコピーするための Work Textureを作成.
 			FRDGTextureDesc WorkSceneColorDesc = {};;
@@ -336,7 +414,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FRDGTextureUAVRef SceneColorUav = GraphBuilder.CreateUAV(SceneColor.Texture);
 			FTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FTestCS::FParameters>();
 			{
-				Parameters->SourceTexture = WorkUavTexture0;//WorkSceneColorTexture;
+				//Parameters->SourceTexture = VoronoiWorkUavTexture0;//WorkSceneColorTexture;
+				Parameters->SourceTexture = work_buffers[last_work_index];//WorkSceneColorTexture;
 				Parameters->SourceSampler = PointClampSampler;
 				Parameters->SourceDimensions = WorkRect;
 

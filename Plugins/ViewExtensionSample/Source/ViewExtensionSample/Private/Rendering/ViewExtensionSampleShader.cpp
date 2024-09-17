@@ -11,3 +11,4 @@ IMPLEMENT_GLOBAL_SHADER(FPrePostProcessToonPs, "/ViewExtensionSampleShaders/Priv
 
 IMPLEMENT_GLOBAL_SHADER(FTestCS, "/ViewExtensionSampleShaders/Private/TestCompute.usf", "MainCS", SF_Compute );
 IMPLEMENT_GLOBAL_SHADER(FImageProcessTestCS, "/ViewExtensionSampleShaders/Private/TestCompute.usf", "MainCS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FVoronoiJumpFloodingCS, "/ViewExtensionSampleShaders/Private/TestCompute.usf", "MainCS", SF_Compute );
