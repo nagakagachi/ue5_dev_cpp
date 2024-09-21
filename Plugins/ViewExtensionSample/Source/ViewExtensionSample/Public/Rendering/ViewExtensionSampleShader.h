@@ -123,6 +123,8 @@ public:
 		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
 		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+
+		SHADER_PARAMETER(uint32, VisualizeMode)
 	END_SHADER_PARAMETER_STRUCT()
 
 	//Called by the engine to determine which permutations to compile for this shader

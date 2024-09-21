@@ -3,7 +3,7 @@
 #include "/Engine/Private/Common.ush"
 
 #if !defined(SHADER_ENTRY_POINT_MODE)
-#define SHADER_ENTRY_POINT_MODE 2
+#define SHADER_ENTRY_POINT_MODE 0
 #endif
 
 #if 0 == SHADER_ENTRY_POINT_MODE
@@ -14,6 +14,8 @@
 
 	RWTexture2D<float4> OutputTexture;
 	uint2 OutputDimensions;
+
+	uint VisualizeMode;
 
 	float SampleRandom(float2 st) {
 		return frac(sin(dot(st.xy,
@@ -30,18 +32,20 @@
 	{
 		float4 source_color = SourceTexture.Load(uint3(DTid.xy, 0));
 
-		float dot_value = dot(float2(1,1), DTid.xy / 4) % 2;
+		const float2 vec_to_nearest_edge = source_color.xy - (DTid.xy + float2(0.5, 0.5));
 
-		// 適当にドットで表示.
-		//OutputTexture[DTid.xy] = source_color * dot_value;
-		//OutputTexture[DTid.xy] = source_color;
-
-		int2 pixel_pos = source_color.xy;
-		float rnd = SampleRandom(pixel_pos / 1024.0);
-		//OutputTexture[DTid.xy] = rnd;
-
+		//const float nearest_length = length(vec_to_nearest_edge);
+		//const float2 nearest_dir = any(0!=vec_to_nearest_edge)? normalize(vec_to_nearest_edge) : float2(0,0);
+		//OutputTexture[DTid.xy] = float4((nearest_dir), pow(saturate(nearest_length / 800.0), 0.75), 0);
+		if(1 == VisualizeMode)
+		{
+			// Workのzにはエッジマスクが格納されているためデバッグ表示.
+			OutputTexture[DTid.xy] = source_color.z;
+			return;
+		}
+		// Distance表示.
 		float dist_voronoi = distance(source_color.xy, DTid.xy + float2(0.5,0.5));
-		OutputTexture[DTid.xy] = pow(saturate(dist_voronoi / 300.0), 1.0);
+		OutputTexture[DTid.xy] = pow(saturate(dist_voronoi / 300.0), 0.5);
 	}
 
 #endif
@@ -87,7 +91,19 @@
 		// 深度購買の上端(近景の外側)を採用している.
 		const float depth_edge_mask = saturate(-depth_edge_sign * depth_edge_value);
 
+#if 1
 		OutputTexture[DTid.xy] = float3(0, 0, depth_edge_mask);
+#else
+		// デバッグ用.
+		if(DTid.y == 500)
+		{
+			OutputTexture[DTid.xy] = float3(0, 0, 1);
+		}
+		else
+		{
+			OutputTexture[DTid.xy] = float3(0, 0, 0);
+		}
+#endif
 	}
 #endif
 

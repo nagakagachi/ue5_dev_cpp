@@ -11,7 +11,7 @@
 #include <bit>
 
 FViewExtensionSampleVe::FViewExtensionSampleVe(const FAutoRegister& AutoRegister, UViewExtensionSampleSubsystem* InWorldSubsystem)
-	: FSceneViewExtensionBase(AutoRegister), WorldSubsystem(InWorldSubsystem)
+	: FSceneViewExtensionBase(AutoRegister), ManageSubsystem(InWorldSubsystem)
 {
 	
 }
@@ -48,7 +48,7 @@ float Naga_EncodeShadingModelIdAndSelectiveOutputMask(uint32 ShadingModelId, uin
 }
 void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder& GraphBuilder, FSceneView& InView, const FRenderTargetBindingSlots& RenderTargets, TRDGUniformBufferRef<FSceneTextureUniformParameters> SceneTextures)
 {
-	if (!IsValid(WorldSubsystem))
+	if (!IsValid(ManageSubsystem))
 	{
 		return;
 	}
@@ -101,7 +101,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
 	// GBuffer操作.
-	if(WorldSubsystem->enable_gbuffer_modify)
+	if(ManageSubsystem->enable_gbuffer_modify)
 	{
 		// PostBasePassではSceneTexturesのGBuffer参照は空なのでRenderTargets側のGBufferを利用する.
 		FRDGTextureRef gb_tex_pbr_shadingmodel = RenderTargets[RT_GB_PbrShadingModel].GetTexture();
@@ -181,7 +181,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
  */
 void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
 {
-	if (!IsValid(WorldSubsystem))
+	if (!IsValid(ManageSubsystem))
 	{
 		return;
 	}
@@ -218,7 +218,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	
 	const auto& input_scene_textures = Inputs.SceneTextures->GetParameters();
 	// ToonPass.
-	if(WorldSubsystem->enable_gbuffer_modify)
+	if(ManageSubsystem->enable_gbuffer_modify)
 	{
 		// Reusing the same output description for our back buffer as SceneColor
 		FRDGTextureDesc WorkOutputDesc = {};;
@@ -276,7 +276,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	}
 
 	
-	if(WorldSubsystem->enable_test_compute)
+	if(ManageSubsystem->enable_test_compute)
 	{
 		FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
 		
@@ -286,8 +286,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		FRDGTextureDesc VoronoiWorkUavTexDesc = {};;
 		{
 			{
-				//const EPixelFormat work_format = PF_R32G32B32F;
-				const EPixelFormat work_format = PF_FloatRGB;
+				// Voronoi Diagram計算のピクセル座標格納のため, 1024以上の精度を要求. 16bit float推奨.
+				const EPixelFormat work_format = PF_FloatRGBA;//16bit float.
 				
 				const auto scene_color_desc = SceneColor.Texture->Desc;
 				// R16B16_Floatが望ましいがUEで選択できないため R32G32B32_Float 等としている. Shader側RWTextureの型と合わせることに注意.
@@ -314,7 +314,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->OutputTexture = WorkUav;
 				Parameters->OutputDimensions = WorkRect;
 
-				Parameters->DepthEdgeCoef = WorldSubsystem->depth_edge_coef;
+				Parameters->DepthEdgeCoef = ManageSubsystem->depth_edge_coef;
 			}
 		
 			TShaderMapRef<FImageProcessTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
@@ -421,6 +421,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 
 				Parameters->OutputTexture = SceneColorUav;
 				Parameters->SourceDimensions = WorkRect;
+				
+				Parameters->VisualizeMode = ManageSubsystem->edge_debug_view;
 			}
 		
 			TShaderMapRef<FTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));

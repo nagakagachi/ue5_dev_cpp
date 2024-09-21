@@ -38,6 +38,9 @@ public:
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	float depth_edge_coef = 0.02f;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	bool edge_debug_view = false;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -61,4 +64,5 @@ public:
 	bool enable_gbuffer_modify = false;
 
 	float depth_edge_coef = 0.02f;
+	bool edge_debug_view = false;
 };

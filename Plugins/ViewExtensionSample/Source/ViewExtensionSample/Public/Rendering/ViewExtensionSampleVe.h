@@ -30,7 +30,7 @@ public:
 public:
 	
 private:
-	UViewExtensionSampleSubsystem* WorldSubsystem;
+	UViewExtensionSampleSubsystem* ManageSubsystem;
 
 	FRDGTextureRef	FrameExtendGBuffer{};
 };

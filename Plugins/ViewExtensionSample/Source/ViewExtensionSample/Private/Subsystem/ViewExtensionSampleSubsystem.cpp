@@ -25,6 +25,7 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->enable_gbuffer_modify = enable_gbuffer_modify;
 			
 			subsystem->depth_edge_coef = depth_edge_coef;
+			subsystem->edge_debug_view = edge_debug_view;
 		}
 	}
 }
