@@ -9,6 +9,7 @@
 #if 0 == SHADER_ENTRY_POINT_MODE
 
 	Texture2D SourceTexture;
+	Texture2D VoronoiWorkTexture;
 	uint2 SourceDimensions;
 	SamplerState SourceSampler;
 
@@ -30,22 +31,35 @@
 		uint Gi		: SV_GroupIndex
 		)
 	{
+		float3 voronoi_value = VoronoiWorkTexture.Load(uint3(DTid.xy, 0)).xyz;
 		float4 source_color = SourceTexture.Load(uint3(DTid.xy, 0));
 
-		const float2 vec_to_nearest_edge = source_color.xy - (DTid.xy + float2(0.5, 0.5));
+		const float2 vec_to_nearest_edge = voronoi_value.xy - (DTid.xy + float2(0.5, 0.5));
+		const bool is_edge = all(0 == vec_to_nearest_edge.xy);
+		const float len_to_nearest_edge = length(vec_to_nearest_edge);
+		const float2 dir_to_nearest_edge = (is_edge)? float2(1,0) : normalize(vec_to_nearest_edge);
 
-		//const float nearest_length = length(vec_to_nearest_edge);
-		//const float2 nearest_dir = any(0!=vec_to_nearest_edge)? normalize(vec_to_nearest_edge) : float2(0,0);
-		//OutputTexture[DTid.xy] = float4((nearest_dir), pow(saturate(nearest_length / 800.0), 0.75), 0);
+		
+		
 		if(1 == VisualizeMode)
 		{
 			// Workのzにはエッジマスクが格納されているためデバッグ表示.
-			OutputTexture[DTid.xy] = source_color.z;
+			OutputTexture[DTid.xy] = voronoi_value.z;
 			return;
 		}
-		// Distance表示.
-		float dist_voronoi = distance(source_color.xy, DTid.xy + float2(0.5,0.5));
-		OutputTexture[DTid.xy] = pow(saturate(dist_voronoi / 300.0), 0.5);
+		if(2 == VisualizeMode)
+		{
+			// Distance表示.
+			OutputTexture[DTid.xy] = saturate(len_to_nearest_edge / 300.0);
+		}
+
+		//float debug_rate = (10 > len_to_nearest_edge)? 10 * SampleRandom(DTid.xy) : 0;//1 - saturate(len_to_nearest_edge / 10.0);
+		//float debug_rate = (10 > len_to_nearest_edge)? (len_to_nearest_edge + 1) * SampleRandom(dir_to_nearest_edge*0.5+0.5) : 0;
+		float debug_rate = (min(10, len_to_nearest_edge) + 1) * SampleRandom(dir_to_nearest_edge);
+		float4 voronoi_source_color = SourceTexture.Load(uint3((DTid.xy + float2(0.5, 0.5)) + dir_to_nearest_edge * (debug_rate), 0));
+		
+		OutputTexture[DTid.xy] = voronoi_source_color;
+		
 	}
 
 #endif
@@ -91,24 +105,15 @@
 		// 深度購買の上端(近景の外側)を採用している.
 		const float depth_edge_mask = saturate(-depth_edge_sign * depth_edge_value);
 
-#if 1
 		OutputTexture[DTid.xy] = float3(0, 0, depth_edge_mask);
-#else
-		// デバッグ用.
-		if(DTid.y == 500)
-		{
-			OutputTexture[DTid.xy] = float3(0, 0, 1);
-		}
-		else
-		{
-			OutputTexture[DTid.xy] = float3(0, 0, 0);
-		}
-#endif
 	}
 #endif
 
 // Voronoi JumpFlooding First Pass.
+//	WorkBufferには1024以上のピクセル座標を格納するため16bit程度の精度を要求する.
 #if 2 == SHADER_ENTRY_POINT_MODE
+	// Input Voronoi Work
+	//	pos.x, pos.y, edge_mask
 	Texture2D VoronoiWorkTexture;
 	uint2 VoronoiWorkTextureDimensions;
 	SamplerState VoronoiWorkTextureSampler;
@@ -116,7 +121,8 @@
 	uint IsJumpFloodingFirstPass;
 	uint JumpFloodingStepSize;
 
-	// pos.x, pos.y, edge_mask
+	// Output Voronoi Work.
+	//	pos.x, pos.y, edge_mask
 	RWTexture2D<float3> OutputTexture;
 	uint2 OutputDimensions;
 

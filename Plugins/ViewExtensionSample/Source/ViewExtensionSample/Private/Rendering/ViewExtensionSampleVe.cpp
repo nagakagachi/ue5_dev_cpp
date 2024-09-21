@@ -415,7 +415,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FTestCS::FParameters>();
 			{
 				//Parameters->SourceTexture = VoronoiWorkUavTexture0;//WorkSceneColorTexture;
-				Parameters->SourceTexture = work_buffers[last_work_index];//WorkSceneColorTexture;
+				Parameters->SourceTexture = WorkSceneColorTexture;
+				Parameters->VoronoiWorkTexture = work_buffers[last_work_index];//WorkSceneColorTexture;
 				Parameters->SourceSampler = PointClampSampler;
 				Parameters->SourceDimensions = WorkRect;
 
