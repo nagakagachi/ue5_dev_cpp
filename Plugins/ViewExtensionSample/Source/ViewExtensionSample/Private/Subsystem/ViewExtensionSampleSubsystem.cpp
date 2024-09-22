@@ -22,10 +22,12 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 		if(subsystem)
 		{
 			subsystem->enable_test_compute = enable_test_compute;
-			subsystem->enable_gbuffer_modify = enable_gbuffer_modify;
-			
 			subsystem->depth_edge_coef = depth_edge_coef;
 			subsystem->edge_debug_view = edge_debug_view;
+			subsystem->enable_voronoi_tile_cell = enable_voronoi_tile_cell;
+
+			
+			subsystem->enable_gbuffer_modify = enable_gbuffer_modify;
 		}
 	}
 }

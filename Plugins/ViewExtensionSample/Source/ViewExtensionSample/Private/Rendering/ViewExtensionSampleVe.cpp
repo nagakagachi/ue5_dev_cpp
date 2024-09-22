@@ -300,7 +300,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			VoronoiWorkUavTexture1 = GraphBuilder.CreateTexture(VoronoiWorkUavTexDesc, TEXT("NagaWorkTexture1"));
 		}
 
-		// edge.
+		// Generate Voronoi Cell.
 		{
 			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(VoronoiWorkUavTexture0);
 			FImageProcessTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FImageProcessTestCS::FParameters>();
@@ -315,6 +315,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->OutputDimensions = WorkRect;
 
 				Parameters->DepthEdgeCoef = ManageSubsystem->depth_edge_coef;
+				Parameters->EnableTileCell = ManageSubsystem->enable_voronoi_tile_cell;
 			}
 		
 			TShaderMapRef<FImageProcessTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));

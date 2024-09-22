@@ -33,14 +33,17 @@ public:
 	bool enable_test_compute = true;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	bool enable_gbuffer_modify = false;
-
-	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	float depth_edge_coef = 0.02f;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	bool edge_debug_view = false;
+	bool enable_voronoi_tile_cell = true;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample", meta = (ClampMin = 0))
+	int edge_debug_view = 0;
+
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	bool enable_gbuffer_modify = false;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -61,8 +64,10 @@ public:
 	friend class FViewExtensionSampleVe;
 
 	bool enable_test_compute = false;
+	float depth_edge_coef = 0.02f;
+	bool enable_voronoi_tile_cell = true;
+	int edge_debug_view = 0;
+
 	bool enable_gbuffer_modify = false;
 
-	float depth_edge_coef = 0.02f;
-	bool edge_debug_view = false;
 };

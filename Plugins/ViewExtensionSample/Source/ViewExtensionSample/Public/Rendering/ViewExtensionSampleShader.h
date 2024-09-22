@@ -169,6 +169,7 @@ public:
 		SHADER_PARAMETER(FUintVector2, OutputDimensions)
 
 		SHADER_PARAMETER(float, DepthEdgeCoef)
+		SHADER_PARAMETER(uint32, EnableTileCell)
 	
 	END_SHADER_PARAMETER_STRUCT()
 
