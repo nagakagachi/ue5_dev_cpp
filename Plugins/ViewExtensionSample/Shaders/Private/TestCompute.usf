@@ -16,21 +16,20 @@ float2 SampleRandomFloat2Float2(float2 st) {
 	return float2(r0, r1);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
 // デバッグ描画用.
-#if 0 == SHADER_ENTRY_POINT_MODE
+	Texture2D pass0_SourceTexture;
+	Texture2D pass0_VoronoiWorkTexture;
+	uint2 pass0_SourceDimensions;
+	SamplerState pass0_SourceSampler;
 
-	Texture2D SourceTexture;
-	Texture2D VoronoiWorkTexture;
-	uint2 SourceDimensions;
-	SamplerState SourceSampler;
+	RWTexture2D<float4> pass0_OutputTexture;
+	uint2 pass0_OutputDimensions;
 
-	RWTexture2D<float4> OutputTexture;
-	uint2 OutputDimensions;
-
-	uint VisualizeMode;
+	uint pass0_VisualizeMode;
 
 	[numthreads(THREADGROUPSIZE_X,THREADGROUPSIZE_Y,THREADGROUPSIZE_Z)]
-	void MainCS(
+	void Pass0_CS(
 		uint3 Gid	: SV_GroupID,
 		uint3 DTid	: SV_DispatchThreadID,
 		uint3 GTid	: SV_GroupThreadID,
@@ -38,8 +37,8 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		)
 	{
 		const float2 pixel_pos = DTid.xy + float2(0.5, 0.5);
-		float3 voronoi_value = VoronoiWorkTexture.Load(uint3(DTid.xy, 0)).xyz;
-		float4 source_color = SourceTexture.Load(uint3(DTid.xy, 0));
+		float3 voronoi_value = pass0_VoronoiWorkTexture.Load(uint3(DTid.xy, 0)).xyz;
+		float4 source_color = pass0_SourceTexture.Load(uint3(DTid.xy, 0));
 
 		const float2 vec_to_nearest_edge = voronoi_value.xy - pixel_pos;
 		const bool is_edge = all(0 == vec_to_nearest_edge.xy);
@@ -48,31 +47,31 @@ float2 SampleRandomFloat2Float2(float2 st) {
 
 		
 		// デバッグモード.　
-		if(1 == VisualizeMode)
+		if(1 == pass0_VisualizeMode)
 		{
 			// Workのzにはエッジマスクが格納されているためデバッグ表示.
-			OutputTexture[DTid.xy] = voronoi_value.z;
+			pass0_OutputTexture[DTid.xy] = voronoi_value.z;
 			return;
 		}
-		if(2 == VisualizeMode)
+		if(2 == pass0_VisualizeMode)
 		{
 			// Distance表示.
-			OutputTexture[DTid.xy] = saturate(len_to_nearest_edge / 300.0);
+			pass0_OutputTexture[DTid.xy] = saturate(len_to_nearest_edge / 300.0);
 			return;
 		}
-		if(3 == VisualizeMode)
+		if(3 == pass0_VisualizeMode)
 		{
 			// シンプルにVoronoiCell地点をサンプリング.
-			float4 voronoi_source_color = SourceTexture.Load(uint3(voronoi_value.xy, 0));
-			OutputTexture[DTid.xy] = voronoi_source_color;
+			float4 voronoi_source_color = pass0_SourceTexture.Load(uint3(voronoi_value.xy, 0));
+			pass0_OutputTexture[DTid.xy] = voronoi_source_color;
 			return;
 		}
-		if(4 == VisualizeMode)
+		if(4 == pass0_VisualizeMode)
 		{
 			// シンプルにVoronoiCell地点をサンプリング, エッジに近い箇所は元の値を優先.
-			float4 voronoi_source_color = SourceTexture.Load(uint3(voronoi_value.xy, 0));
+			float4 voronoi_source_color = pass0_SourceTexture.Load(uint3(voronoi_value.xy, 0));
 			voronoi_source_color = lerp(source_color, voronoi_source_color, saturate(len_to_nearest_edge / 5.0));
-			OutputTexture[DTid.xy] = voronoi_source_color;
+			pass0_OutputTexture[DTid.xy] = voronoi_source_color;
 			return;
 		}
 		
@@ -82,36 +81,34 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		const float distance_rate = saturate(len_to_nearest_edge / 10.0);
 		const float stroke_dir_rate = lerp(0, 1.0, distance_rate);
 		const float2 stroke_dir = normalize(lerp(float2(dir_to_nearest_edge.y, -dir_to_nearest_edge.x), dir_to_nearest_edge, stroke_dir_rate));
-		float4 edge_stroke_color = SourceTexture.Load(uint3(pixel_pos + stroke_dir * clamp(len_to_nearest_edge, k_stroke_min_length, k_stroke_max_length), 0));
-		if(5 == VisualizeMode)
+		float4 edge_stroke_color = pass0_SourceTexture.Load(uint3(pixel_pos + stroke_dir * clamp(len_to_nearest_edge, k_stroke_min_length, k_stroke_max_length), 0));
+		if(5 == pass0_VisualizeMode)
 		{
-			OutputTexture[DTid.xy] = float4(stroke_dir, 0, 0);
+			pass0_OutputTexture[DTid.xy] = float4(stroke_dir, 0, 0);
 			return;
 		}
 		
-		OutputTexture[DTid.xy] = edge_stroke_color;
+		pass0_OutputTexture[DTid.xy] = edge_stroke_color;
 		
 	}
 
-#endif
 
+// ---------------------------------------------------------------------------------------------------------------------
 // Voronoi用にエッジ部と一定密度でのCell画像生成する.
 // Edge Detection and Output Voronoi Seed.
-#if 1 == SHADER_ENTRY_POINT_MODE
-
-	Texture2D SceneDepthTexture;
-	uint2 SourceDimensions;
-	SamplerState SourceSampler;
+	Texture2D pass1_SceneDepthTexture;
+	uint2 pass1_SourceDimensions;
+	SamplerState pass1_SourceSampler;
 
 	// pos.x, pos.y, edge_mask
-	RWTexture2D<float3> OutputTexture;
-	uint2 OutputDimensions;
+	RWTexture2D<float3> pass1_OutputTexture;
+	uint2 pass1_OutputDimensions;
 
-	float DepthEdgeCoef;
-	uint  EnableTileCell;
+	float pass1_DepthEdgeCoef;
+	uint  pass1_EnableTileCell;
 
 	[numthreads(THREADGROUPSIZE_X,THREADGROUPSIZE_Y,THREADGROUPSIZE_Z)]
-	void MainCS(
+	void Pass1_CS(
 		uint3 Gid	: SV_GroupID,
 		uint3 DTid	: SV_DispatchThreadID,
 		uint3 GTid	: SV_GroupThreadID,
@@ -119,22 +116,22 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		)
 	{
 		// エッジにCellCenterを生成.
-		float device_depth = SceneDepthTexture.Load(uint3(DTid.xy, 0)).x;
+		float device_depth = pass1_SceneDepthTexture.Load(uint3(DTid.xy, 0)).x;
 		// View空間深度変換. ViewUniformBufferを要求する.
 		float view_depth = ConvertFromDeviceZ(device_depth);
-		float vd0 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, -1), 0)).x);
-		float vd1 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(0, -1), 0)).x);
-		float vd2 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(1, -1), 0)).x);
-		float vd3 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, 0), 0)).x);
-		float vd4 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(1, 0), 0)).x);
-		float vd5 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, 1), 0)).x);
-		float vd6 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(0, 1), 0)).x);
-		float vd7 = ConvertFromDeviceZ(SceneDepthTexture.Load(uint3(DTid.xy + int2(1, 1), 0)).x);
+		float vd0 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, -1), 0)).x);
+		float vd1 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(0, -1), 0)).x);
+		float vd2 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(1, -1), 0)).x);
+		float vd3 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, 0), 0)).x);
+		float vd4 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(1, 0), 0)).x);
+		float vd5 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(-1, 1), 0)).x);
+		float vd6 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(0, 1), 0)).x);
+		float vd7 = ConvertFromDeviceZ(pass1_SceneDepthTexture.Load(uint3(DTid.xy + int2(1, 1), 0)).x);
 
 		const float depth_raplacian_filter = (vd0+vd1+vd2+vd3+vd4+vd5+vd6+vd7) - (8*view_depth); 
 
 		const float depth_edge_sign = sign(depth_raplacian_filter);
-		const float depth_edge_value = step(DepthEdgeCoef * view_depth, abs(depth_raplacian_filter));
+		const float depth_edge_value = step(pass1_DepthEdgeCoef * view_depth, abs(depth_raplacian_filter));
 		// 深度購買の上端(近景の外側)を採用している.
 		//const float depth_edge_mask = saturate(-depth_edge_sign * depth_edge_value);
 		// 内側.
@@ -152,7 +149,7 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		const int2 k_cell_center_pos = (tile_pos * k_cell_size + ((k_cell_size - 1) * tile_rand));
 
 		float fixed_tile_seed = 0;
-		if(EnableTileCell)
+		if(pass1_EnableTileCell)
 		{
 			if(all( DTid.xy == k_cell_center_pos ))
 			{
@@ -161,10 +158,9 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		}
 		
 		// 固定生成 + デプスエッジ
-		OutputTexture[DTid.xy] = float3(0, 0, saturate(fixed_tile_seed + depth_edge_mask));
+		pass1_OutputTexture[DTid.xy] = float3(0, 0, saturate(fixed_tile_seed + depth_edge_mask));
 
 	}
-#endif
 
 
 

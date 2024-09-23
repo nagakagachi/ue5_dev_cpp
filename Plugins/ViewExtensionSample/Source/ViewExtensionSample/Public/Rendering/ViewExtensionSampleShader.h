@@ -14,7 +14,7 @@ public:
 	// ------------------------------------------------------------------------------------------
 	// Declare Constructors for Shader. and bind local "FParameters" to ShaderParameter.
 	BEGIN_SHADER_PARAMETER_STRUCT(FShaderInnerParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, pass0_View)
 
 		SHADER_PARAMETER_SAMPLER(SamplerState,		pass0_sampler_screen)
 	
@@ -60,7 +60,7 @@ public:
 	// ------------------------------------------------------------------------------------------
 	// Declare Constructors for Shader. and bind local "FParameters" to ShaderParameter.
 	BEGIN_SHADER_PARAMETER_STRUCT(FShaderInnerParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, pass1_View)
 		SHADER_PARAMETER(float,						pass1_list_shadow_threshold)
 	
 		SHADER_PARAMETER_SAMPLER(SamplerState,		pass1_sampler_screen)
@@ -115,14 +115,14 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FTestCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, VoronoiWorkTexture)
-		SHADER_PARAMETER(FUintVector2, SourceDimensions)
-		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
-		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, pass0_SourceTexture)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, pass0_VoronoiWorkTexture)
+		SHADER_PARAMETER(FUintVector2, pass0_SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, pass0_SourceSampler)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, pass0_OutputTexture)
+		SHADER_PARAMETER(FUintVector2, pass0_OutputDimensions)
 
-		SHADER_PARAMETER(uint32, VisualizeMode)
+		SHADER_PARAMETER(uint32, pass0_VisualizeMode)
 	END_SHADER_PARAMETER_STRUCT()
 
 	//Called by the engine to determine which permutations to compile for this shader
@@ -135,8 +135,6 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		OutEnvironment.SetDefine(TEXT("SHADER_ENTRY_POINT_MODE"), 0);// エントリポイント指定.
 		
 		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
@@ -156,17 +154,17 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FImageProcessTestCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, pass1_View)
 	
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneDepthTexture)
-		SHADER_PARAMETER(FUintVector2, SourceDimensions)
-		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, pass1_SceneDepthTexture)
+		SHADER_PARAMETER(FUintVector2, pass1_SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, pass1_SourceSampler)
 	
-		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float3>, OutputTexture)
-		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float3>, pass1_OutputTexture)
+		SHADER_PARAMETER(FUintVector2, pass1_OutputDimensions)
 
-		SHADER_PARAMETER(float, DepthEdgeCoef)
-		SHADER_PARAMETER(uint32, EnableTileCell)
+		SHADER_PARAMETER(float, pass1_DepthEdgeCoef)
+		SHADER_PARAMETER(uint32, pass1_EnableTileCell)
 	
 	END_SHADER_PARAMETER_STRUCT()
 
@@ -180,8 +178,6 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		OutEnvironment.SetDefine(TEXT("SHADER_ENTRY_POINT_MODE"), 1);// エントリポイント指定.
 		
 		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);

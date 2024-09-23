@@ -302,17 +302,17 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(VoronoiCellTexture);
 			FImageProcessTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FImageProcessTestCS::FParameters>();
 			{
-				Parameters->View = View.ViewUniformBuffer;// DeviceDepth to ViewDepth変換等のため.
+				Parameters->pass1_View = View.ViewUniformBuffer;// DeviceDepth to ViewDepth変換等のため.
 				
-				Parameters->SceneDepthTexture = input_scene_textures->SceneDepthTexture;
-				Parameters->SourceDimensions = WorkRect;
-				Parameters->SourceSampler = PointClampSampler;
+				Parameters->pass1_SceneDepthTexture = input_scene_textures->SceneDepthTexture;
+				Parameters->pass1_SourceDimensions = WorkRect;
+				Parameters->pass1_SourceSampler = PointClampSampler;
 
-				Parameters->OutputTexture = WorkUav;
-				Parameters->OutputDimensions = WorkRect;
+				Parameters->pass1_OutputTexture = WorkUav;
+				Parameters->pass1_OutputDimensions = WorkRect;
 
-				Parameters->DepthEdgeCoef = ManageSubsystem->depth_edge_coef;
-				Parameters->EnableTileCell = ManageSubsystem->enable_voronoi_tile_cell;
+				Parameters->pass1_DepthEdgeCoef = ManageSubsystem->depth_edge_coef;
+				Parameters->pass1_EnableTileCell = ManageSubsystem->enable_voronoi_tile_cell;
 			}
 		
 			TShaderMapRef<FImageProcessTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
@@ -346,15 +346,15 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FRDGTextureUAVRef SceneColorUav = GraphBuilder.CreateUAV(SceneColor.Texture);
 			FTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FTestCS::FParameters>();
 			{
-				Parameters->SourceTexture = WorkSceneColorTexture;
-				Parameters->VoronoiWorkTexture = voronoi_texture;
-				Parameters->SourceSampler = PointClampSampler;
-				Parameters->SourceDimensions = WorkRect;
+				Parameters->pass0_SourceTexture = WorkSceneColorTexture;
+				Parameters->pass0_VoronoiWorkTexture = voronoi_texture;
+				Parameters->pass0_SourceSampler = PointClampSampler;
+				Parameters->pass0_SourceDimensions = WorkRect;
 
-				Parameters->OutputTexture = SceneColorUav;
-				Parameters->SourceDimensions = WorkRect;
+				Parameters->pass0_OutputTexture = SceneColorUav;
+				Parameters->pass0_SourceDimensions = WorkRect;
 				
-				Parameters->VisualizeMode = ManageSubsystem->edge_debug_view;
+				Parameters->pass0_VisualizeMode = ManageSubsystem->edge_debug_view;
 			}
 		
 			TShaderMapRef<FTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
