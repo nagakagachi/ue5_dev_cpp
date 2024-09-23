@@ -257,6 +257,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->pass1_tex_gbuffer_a = input_scene_textures->GBufferATexture;
 				Parameters->pass1_tex_gbuffer_b_custom = FrameExtendGBuffer;// PostBasePassで生成したRDGTextureを使用することをRDGに指示.
 				Parameters->pass1_tex_gbuffer_c = input_scene_textures->GBufferCTexture;
+				Parameters->pass1_tex_dimensions = FUintVector2(PrimaryViewRect.Width(), PrimaryViewRect.Height());
 
 				Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
 			}

@@ -94,6 +94,7 @@
 	Texture2D pass1_tex_gbuffer_a;// normal
 	Texture2D pass1_tex_gbuffer_b_custom;// pbr shadingmodel. カスタムパスで退避したもとのShadingModelを格納したGBuffer.
 	Texture2D pass1_tex_gbuffer_c;// basecolor ao
+	uint2 pass1_tex_dimensions;
 
 
 	// EngineのDrawScreenPassを利用し, 自動でDrawRectangle関連のParameterが割り当てられる想定.
@@ -130,11 +131,143 @@
 			return scene_color;// 早期リターン.
 		}
 
+		// 該当IDピクセルについてのみ適当なフィルタリングを動作させる.
+
+		// デバッグ用.
+		if(0.6 < UV.x)
+		{
+			//return scene_color;
+		}
+#if 1
+		const int kernel_radius = 9;
+		const float2 pixel_uv_size = 1.0 / float2(pass1_tex_dimensions.x, pass1_tex_dimensions.y);
+
+		const int kuwahara_region_width = kernel_radius+1;
+		const int kuwahara_region_area = kuwahara_region_width*kuwahara_region_width;
+		const float kuwahara_region_area_inv = 1.0 / kuwahara_region_area;
+		
+		float3 avg[4];
+		float3 avg_sq[4];
+		int weight[4];
+		for(int i = 0; i < 4; ++i)
+		{
+			avg[i] = 0;
+			avg_sq[i] = 0;
+			weight[i] = 0;
+		}
+		
+		for(int j = -kernel_radius; j <= kernel_radius; ++j)
+		{
+			const bool up = (0 >= j);
+			const bool down = (0 <= j);
+			for(int i = -kernel_radius; i <= kernel_radius; ++i)
+			{
+				const bool left = (0 >= i);
+				const bool right = (0 <= i);
+				
+				const float2 sample_uv = UV + pixel_uv_size * float2(i, j);
+				
+				const float4 neighbor_gbuffer_b = Texture2DSample(pass1_tex_gbuffer_b_custom, pass1_sampler_screen, sample_uv);
+				const uint neighbor_shading_model = DecodeShadingModelId(neighbor_gbuffer_b.a);
+				if(neighbor_shading_model != k_test_shading_model_id)
+				{
+					continue;
+				}
+
+				float3 sample_scene_color = Texture2DSample(pass1_tex_scene_color, pass1_sampler_screen, sample_uv).xyz;
+				float3 sample_scene_color_sq = sample_scene_color*sample_scene_color;
+				if(up)
+				{
+					if(left)
+					{
+						const int region_i = 0;
+						avg[region_i] += sample_scene_color;
+						avg_sq[region_i] += sample_scene_color_sq;
+						weight[region_i] += 1;
+					}
+					if(right)
+					{
+						const int region_i = 1;
+						avg[region_i] += sample_scene_color;
+						avg_sq[region_i] += sample_scene_color_sq;
+						weight[region_i] += 1;
+					}
+				}
+				if(down)
+				{
+					if(left)
+					{
+						const int region_i = 2;
+						avg[region_i] += sample_scene_color;
+						avg_sq[region_i] += sample_scene_color_sq;
+						weight[region_i] += 1;
+					}
+					if(right)
+					{
+						const int region_i = 3;
+						avg[region_i] += sample_scene_color;
+						avg_sq[region_i] += sample_scene_color_sq;
+						weight[region_i] += 1;
+					}
+				}
+			}
+		}
+		for(int i = 0; i < 4; ++i)
+		{
+			const float region_div = (0 < weight[i])? 1.0 / weight[i] : 1;
+			avg[i] *= region_div;
+			avg_sq[i] *= region_div;
+		}
+
+		float var[4];
+		for(int i = 0; i < 4; ++i)
+		{
+			const float3 var_rgb = avg_sq[i] - avg[i]*avg[i];
+			var[i] = var_rgb.x + var_rgb.y + var_rgb.z;
+		}
+
+		int min_region_i01 = (var[0] < var[1]) ? 0 : 1;
+		int min_region_i23 = (var[2] < var[3]) ? 2 : 3;
+		int min_region = (var[min_region_i01] < var[min_region_i23]) ? min_region_i01 : min_region_i23;
+		
+		return float4(avg[min_region], 0);
+		
+#else
+		float4 accum_color = (float4)0;
+		float accum_weight = 0;
+		const float2 pixel_uv_size = 1.0 / float2(pass1_tex_dimensions.x, pass1_tex_dimensions.y);
+		const int kernel_radius = 4;
+		for(int j = -kernel_radius; j < kernel_radius; ++j)
+		{
+			for(int i = -kernel_radius; i < kernel_radius; ++i)
+			{
+				const float2 sample_uv = UV + pixel_uv_size * float2(i, j);
+				const float4 neighbor_gbuffer_b = Texture2DSample(pass1_tex_gbuffer_b_custom, pass1_sampler_screen, sample_uv);
+				const uint neighbor_shading_model = DecodeShadingModelId(neighbor_gbuffer_b.a);
+				if(neighbor_shading_model != k_test_shading_model_id)
+				{
+					continue;
+				}
+				
+				float4 neighbor_scene_color = Texture2DSample(pass1_tex_scene_color, pass1_sampler_screen, sample_uv);
+
+				// bilateral.
+				const float color_distance = distance(neighbor_scene_color.xyz, scene_color.xyz);
+				const float weight = pow(1.0/(color_distance+1), 4);
+				accum_color += neighbor_scene_color * weight;
+				accum_weight += weight;
+			}
+		}
+
+		accum_color = (0 < accum_weight)? accum_color/accum_weight : scene_color;
+		return accum_color;
+#endif
+
 	#if 0
 		// デバッグ用.
 		if(0.2 > UV.x)
 		{
-			return scene_color;
+			//return scene_color;
 		}
 		
 		const float4 gbuffer_a_value = Texture2DSample(pass1_tex_gbuffer_a, pass1_sampler_screen, UV);
@@ -152,21 +285,15 @@
 		const float lit_shade_mask = step(k_shade_thresh, gb_roughness);
 		
 		// Cast Shadowの検出.
-		const float lit_shadow_thres_mask = step(list_shadow_threshold, lit_luminance);
+		const float lit_shadow_thres_mask = step(pass1_list_shadow_threshold, lit_luminance);
 		const float lit_shadow_mask = min(1.0, lit_shadow_thres_mask + (1.0 - lit_shade_mask));
 		
 		const float toon_shade_lit = min(lerp(0.05, 1.0, lit_shadow_mask), lerp(0.01, 1.0, lit_shade_mask));
 		if(0.5 < UV.x)
 		{
 			//return float4(1.0-lit_shade_mask, 1.0-lit_shadow_mask, 0, 1);
-			return float4(scene_color.rgb * toon_shade_lit, 1);
+			//return float4(scene_color.rgb * toon_shade_lit, 1);
 		}
-		
 		return float4(gb_bc * toon_shade_lit, 1);
-	#else
-		if(0.5 > UV.x)
-			return scene_color;
-		
-		return scene_color.bgra;// 適当にチャンネルシフト.
 	#endif
 	}

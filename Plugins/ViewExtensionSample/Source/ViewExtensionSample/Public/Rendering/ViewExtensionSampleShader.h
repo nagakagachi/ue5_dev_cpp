@@ -69,6 +69,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_gbuffer_a)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_gbuffer_b_custom)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_gbuffer_c)
+		SHADER_PARAMETER(FUintVector2, pass1_tex_dimensions)
 	
 		RENDER_TARGET_BINDING_SLOTS()	// RenderTargetバインド.
 	
