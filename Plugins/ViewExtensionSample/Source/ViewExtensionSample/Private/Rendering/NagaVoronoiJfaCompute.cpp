@@ -54,7 +54,7 @@ IMPLEMENT_GLOBAL_SHADER(FVoronoiJumpFloodingCS, "/ViewExtensionSampleShaders/Pri
 
 
 // Input Voronoi CellMask Texture : 0->NonCell, 1->Cell
-// Output Voronoi Diagram Texture : RG->PixelPosition, B->CellMask
+// Output Voronoi Diagram Texture : RGBA_float, RG->PixelPosition, B->CellMask
 FRDGTexture* FNagaVoronoiJfaCompute::Execute(FRDGBuilder& GraphBuilder, FRDGTexture* seed_buffer, FUintVector2 work_size)
 {
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
