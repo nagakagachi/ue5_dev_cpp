@@ -3,11 +3,9 @@
 
 
 #include "GlobalShader.h"
-
 #include "DataDrivenShaderPlatformInfo.h"
 #include "MaterialShader.h"
 #include "ShaderParameterStruct.h"
-
 
 // 基底.
 class FPostBasePassModifyGBuffer : public FGlobalShader
@@ -17,12 +15,11 @@ public:
 	// Declare Constructors for Shader. and bind local "FParameters" to ShaderParameter.
 	BEGIN_SHADER_PARAMETER_STRUCT(FShaderInnerParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
-		SHADER_PARAMETER(float,						ViewExtensionSample_FloatParam) // カスタムパラメータバインド.	
 
-		SHADER_PARAMETER_SAMPLER(SamplerState,		sampler_screen)
+		SHADER_PARAMETER_SAMPLER(SamplerState,		pass0_sampler_screen)
 	
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		tex_gbuffer_b_custom)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		tex_gbuffer_c)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass0_tex_gbuffer_b_custom)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass0_tex_gbuffer_c)
 	
 		RENDER_TARGET_BINDING_SLOTS()	// RenderTargetバインド.
 	END_SHADER_PARAMETER_STRUCT()
@@ -64,14 +61,14 @@ public:
 	// Declare Constructors for Shader. and bind local "FParameters" to ShaderParameter.
 	BEGIN_SHADER_PARAMETER_STRUCT(FShaderInnerParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
-		SHADER_PARAMETER(float,						list_shadow_threshold)
+		SHADER_PARAMETER(float,						pass1_list_shadow_threshold)
 	
-		SHADER_PARAMETER_SAMPLER(SamplerState,		sampler_screen)
+		SHADER_PARAMETER_SAMPLER(SamplerState,		pass1_sampler_screen)
 	
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		tex_scene_color)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		tex_gbuffer_a)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		tex_gbuffer_b_custom)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		tex_gbuffer_c)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_scene_color)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_gbuffer_a)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_gbuffer_b_custom)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D,		pass1_tex_gbuffer_c)
 	
 		RENDER_TARGET_BINDING_SLOTS()	// RenderTargetバインド.
 	

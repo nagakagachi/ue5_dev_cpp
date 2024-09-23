@@ -16,7 +16,7 @@ float2 SampleRandomFloat2Float2(float2 st) {
 	return float2(r0, r1);
 }
 
-
+// デバッグ描画用.
 #if 0 == SHADER_ENTRY_POINT_MODE
 
 	Texture2D SourceTexture;
@@ -95,7 +95,7 @@ float2 SampleRandomFloat2Float2(float2 st) {
 
 #endif
 
-
+// Voronoi用にエッジ部と一定密度でのCell画像生成する.
 // Edge Detection and Output Voronoi Seed.
 #if 1 == SHADER_ENTRY_POINT_MODE
 

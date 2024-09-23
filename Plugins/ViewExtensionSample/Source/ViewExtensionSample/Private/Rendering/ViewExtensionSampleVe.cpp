@@ -144,11 +144,10 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 			
 			FPostBasePassModifyGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FPostBasePassModifyGBufferPs::FParameters>();
 			{
-				Parameters->ViewExtensionSample_FloatParam = cos(tmp_counter*2.0f)*0.5f + 0.5f;
-				Parameters->sampler_screen = PointClampSampler;
+				Parameters->pass0_sampler_screen = PointClampSampler;
 
-				Parameters->tex_gbuffer_b_custom = new_gbuffer_tex_pbr_shadingmodel;
-				Parameters->tex_gbuffer_c = new_gbuffer_tex_bc_ao;
+				Parameters->pass0_tex_gbuffer_b_custom = new_gbuffer_tex_pbr_shadingmodel;
+				Parameters->pass0_tex_gbuffer_c = new_gbuffer_tex_bc_ao;
 
 				// オリジナルのGBufferへ書き戻して修正する.
 				Parameters->RenderTargets[0] = RenderTargets[RT_GB_PbrShadingModel];
@@ -250,14 +249,14 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 
 			FPrePostProcessToonPs::FParameters* Parameters = GraphBuilder.AllocParameters<FPrePostProcessToonPs::FParameters>();
 			{
-				Parameters->list_shadow_threshold = 0.499;
+				Parameters->pass1_list_shadow_threshold = 0.499;
 
-				Parameters->sampler_screen = PointClampSampler;
+				Parameters->pass1_sampler_screen = PointClampSampler;
 				
-				Parameters->tex_scene_color = WorkTexture;
-				Parameters->tex_gbuffer_a = input_scene_textures->GBufferATexture;
-				Parameters->tex_gbuffer_b_custom = FrameExtendGBuffer;// PostBasePassで生成したRDGTextureを使用することをRDGに指示.
-				Parameters->tex_gbuffer_c = input_scene_textures->GBufferCTexture;
+				Parameters->pass1_tex_scene_color = WorkTexture;
+				Parameters->pass1_tex_gbuffer_a = input_scene_textures->GBufferATexture;
+				Parameters->pass1_tex_gbuffer_b_custom = FrameExtendGBuffer;// PostBasePassで生成したRDGTextureを使用することをRDGに指示.
+				Parameters->pass1_tex_gbuffer_c = input_scene_textures->GBufferCTexture;
 
 				Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
 			}
@@ -298,7 +297,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			VoronoiCellTexture = GraphBuilder.CreateTexture(VoronoiWorkUavTexDesc, TEXT("NagaWorkTexture0"));
 		}
 
-		// Generate Voronoi Cell Seed.
+		// Generate Voronoi Cell Seed (Edge detection and other).
 		{
 			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(VoronoiCellTexture);
 			FImageProcessTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FImageProcessTestCS::FParameters>();

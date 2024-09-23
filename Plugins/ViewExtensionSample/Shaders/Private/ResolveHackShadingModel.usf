@@ -1,0 +1,172 @@
+// ResolveHackShadingModel.usf.usf
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/DeferredShadingCommon.ush"
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PostGBuffer
+	SamplerState pass0_sampler_screen;
+	Texture2D pass0_tex_gbuffer_b_custom;
+	Texture2D pass0_tex_gbuffer_c;
+
+	/*
+	DeferredShadingCommon.ush
+	float EncodeShadingModelIdAndSelectiveOutputMask(uint ShadingModelId, uint SelectiveOutputMask)
+	{
+		uint Value = (ShadingModelId & SHADINGMODELID_MASK) | SelectiveOutputMask;
+		return (float)Value / (float)0xFF;
+	}
+	uint DecodeShadingModelId(float InPackedChannel)
+	{
+		return ((uint)round(InPackedChannel * (float)0xFF)) & SHADINGMODELID_MASK;
+	}
+	uint DecodeSelectiveOutputMask(float InPackedChannel)
+	{
+		return ((uint)round(InPackedChannel * (float)0xFF)) & ~SHADINGMODELID_MASK;
+	}
+	*/
+
+	// EngineのDrawScreenPassを利用し, 自動でDrawRectangle関連のParameterが割り当てられる想定.
+	void Pass0_VS(
+		in float4 InPosition : ATTRIBUTE0,
+		in float2 InTexcoord : ATTRIBUTE1,
+
+		out noperspective float4 OutUVAndScreenPos : TEXCOORD0,
+		out float4 OutPosition : SV_POSITION)
+	{
+		DrawRectangle(InPosition, InTexcoord, OutPosition, OutUVAndScreenPos);
+	}
+
+	struct Pass0_PsOut
+	{
+		float4 pbr_shadingmodel : SV_TARGET0;
+		float4 bc_ao			: SV_TARGET1;
+	};
+	Pass0_PsOut Pass0_PS(
+		noperspective float4 UVAndScreenPos : TEXCOORD0,
+		float4 OutPosition : SV_POSITION
+		)
+	{
+		Pass0_PsOut ps_output = (Pass0_PsOut)0;
+		
+		float2 UV = UVAndScreenPos.xy;
+
+		// 先行してShadingModelをチェック.
+		float4 gbuffer_b_value = Texture2DSample(pass0_tex_gbuffer_b_custom, pass0_sampler_screen, UV);
+		uint shading_model = DecodeShadingModelId(gbuffer_b_value.a);
+		uint selective_output_mask = DecodeSelectiveOutputMask(gbuffer_b_value.a);
+
+		// Material側の自前の専用MaterialFunctionでShadingModelを書き換えたピクセルを処理する.
+		//	ここでCustomShadingModelは 15 としている.
+		const uint k_test_shading_model_id = 15;
+		if(k_test_shading_model_id != shading_model)
+		{
+			discard;// 破棄.
+		}
+		// バッファ読み取り.
+		float4 gbuffer_c_value = Texture2DSample(pass0_tex_gbuffer_c, pass0_sampler_screen, UV);
+		
+		ps_output.pbr_shadingmodel = gbuffer_b_value;
+		ps_output.bc_ao = gbuffer_c_value;
+		
+		// テスト用のShadingModelのピクセルをUnlit扱いにして書き戻す.
+		//	DefaultLitマテリアルで出力ShadingModelをハックしてUnlitではない値(15等)の値にすることでGBufferが書き込まれ、ここで実際にShadingMdelの値をUnlitに書き換えることでPostProcess段階でGBufferのあるUnlitのようにできる.
+		ps_output.pbr_shadingmodel.a = EncodeShadingModelIdAndSelectiveOutputMask(SHADINGMODELID_UNLIT, selective_output_mask);
+		// 今回はDefaultLitに戻しておく.
+		//ps_output.pbr_shadingmodel.a = EncodeShadingModelIdAndSelectiveOutputMask(SHADINGMODELID_DEFAULT_LIT, selective_output_mask);
+		// Metallic, Specular, Roughness.
+		//ps_output.pbr_shadingmodel.r = 0;
+		//ps_output.pbr_shadingmodel.g = 0;
+		//ps_output.pbr_shadingmodel.b = 1;
+
+		//ps_output.bc_ao.rgb = float3(1,1,1);// BC書き換え.
+
+		return ps_output;
+	}
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PrePostprocess
+	float pass1_list_shadow_threshold;
+	SamplerState pass1_sampler_screen;
+
+	Texture2D pass1_tex_scene_color;
+	Texture2D pass1_tex_gbuffer_a;// normal
+	Texture2D pass1_tex_gbuffer_b_custom;// pbr shadingmodel. カスタムパスで退避したもとのShadingModelを格納したGBuffer.
+	Texture2D pass1_tex_gbuffer_c;// basecolor ao
+
+
+	// EngineのDrawScreenPassを利用し, 自動でDrawRectangle関連のParameterが割り当てられる想定.
+	void Pass1_VS(
+		in float4 InPosition : ATTRIBUTE0,
+		in float2 InTexcoord : ATTRIBUTE1,
+
+		out noperspective float4 OutUVAndScreenPos : TEXCOORD0,
+		out float4 OutPosition : SV_POSITION)
+	{
+		DrawRectangle(InPosition, InTexcoord, OutPosition, OutUVAndScreenPos);
+	}
+
+	float4 Pass1_PS(
+		noperspective float4 UVAndScreenPos : TEXCOORD0,
+		float4 OutPosition : SV_POSITION
+		) : SV_TARGET0
+	{
+		float2 UV = UVAndScreenPos.xy;
+
+		const float4 gbuffer_b_value = Texture2DSample(pass1_tex_gbuffer_b_custom, pass1_sampler_screen, UV);
+		const uint shading_model = DecodeShadingModelId(gbuffer_b_value.a);
+		const uint selective_output_mask = DecodeSelectiveOutputMask(gbuffer_b_value.a);
+		const float gb_metallic = gbuffer_b_value.r;
+		const float gb_specular = gbuffer_b_value.g;
+		const float gb_roughness = gbuffer_b_value.b;
+		
+		float4 scene_color = Texture2DSample(pass1_tex_scene_color, pass1_sampler_screen, UV);
+		
+		// 疑似ShadingModelフィルタリング.
+		const uint k_test_shading_model_id = 15;
+		if(shading_model != k_test_shading_model_id)
+		{
+			return scene_color;// 早期リターン.
+		}
+
+	#if 0
+		// デバッグ用.
+		if(0.2 > UV.x)
+		{
+			return scene_color;
+		}
+		
+		const float4 gbuffer_a_value = Texture2DSample(pass1_tex_gbuffer_a, pass1_sampler_screen, UV);
+		const float3 gb_normal = DecodeNormal(gbuffer_a_value.rgb);
+		const float4 gbuffer_c_value = Texture2DSample(pass1_tex_gbuffer_c, pass1_sampler_screen, UV);
+		const float3 gb_bc = gbuffer_c_value.rgb;
+
+		// lit / bc でライト輝度の抽出
+		const bool3 valid_bc = (0.001 < gb_bc);
+		const float3 bc_div = select(valid_bc, gb_bc, float3(1,1,1));
+		const float3 pseudo_irradiance = scene_color.rgb / bc_div;
+		const float lit_luminance = Luminance(pseudo_irradiance);
+
+		const float k_shade_thresh = 0.5;
+		const float lit_shade_mask = step(k_shade_thresh, gb_roughness);
+		
+		// Cast Shadowの検出.
+		const float lit_shadow_thres_mask = step(list_shadow_threshold, lit_luminance);
+		const float lit_shadow_mask = min(1.0, lit_shadow_thres_mask + (1.0 - lit_shade_mask));
+		
+		const float toon_shade_lit = min(lerp(0.05, 1.0, lit_shadow_mask), lerp(0.01, 1.0, lit_shade_mask));
+		if(0.5 < UV.x)
+		{
+			//return float4(1.0-lit_shade_mask, 1.0-lit_shadow_mask, 0, 1);
+			return float4(scene_color.rgb * toon_shade_lit, 1);
+		}
+		
+		return float4(gb_bc * toon_shade_lit, 1);
+	#else
+		if(0.5 > UV.x)
+			return scene_color;
+		
+		return scene_color.bgra;// 適当にチャンネルシフト.
+	#endif
+	}
