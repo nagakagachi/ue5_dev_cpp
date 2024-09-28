@@ -102,7 +102,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
 	// GBuffer操作.
-	if(ManageSubsystem->enable_gbuffer_modify)
+	if(ManageSubsystem->enable_shadingmodel_only_filter)
 	{
 		// PostBasePassではSceneTexturesのGBuffer参照は空なのでRenderTargets側のGBufferを利用する.
 		FRDGTextureRef gb_tex_pbr_shadingmodel = RenderTargets[RT_GB_PbrShadingModel].GetTexture();
@@ -218,7 +218,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	
 	const auto& input_scene_textures = Inputs.SceneTextures->GetParameters();
 	// ToonPass.
-	if(ManageSubsystem->enable_gbuffer_modify)
+	if(ManageSubsystem->enable_shadingmodel_only_filter)
 	{
 		// Reusing the same output description for our back buffer as SceneColor
 		FRDGTextureDesc WorkOutputDesc = {};;

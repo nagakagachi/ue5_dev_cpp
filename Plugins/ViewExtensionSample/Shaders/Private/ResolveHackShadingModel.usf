@@ -132,19 +132,8 @@
 		}
 
 		// 該当IDピクセルについてのみ適当なフィルタリングを動作させる.
-
-		// デバッグ用.
-		if(0.6 < UV.x)
-		{
-			//return scene_color;
-		}
-#if 1
-		const int kernel_radius = 9;
+		const int kernel_radius = 7;
 		const float2 pixel_uv_size = 1.0 / float2(pass1_tex_dimensions.x, pass1_tex_dimensions.y);
-
-		const int kuwahara_region_width = kernel_radius+1;
-		const int kuwahara_region_area = kuwahara_region_width*kuwahara_region_width;
-		const float kuwahara_region_area_inv = 1.0 / kuwahara_region_area;
 		
 		float3 avg[4];
 		float3 avg_sq[4];
@@ -158,15 +147,11 @@
 		
 		for(int j = -kernel_radius; j <= kernel_radius; ++j)
 		{
-			const bool up = (0 >= j);
-			const bool down = (0 <= j);
 			for(int i = -kernel_radius; i <= kernel_radius; ++i)
-			{
-				const bool left = (0 >= i);
-				const bool right = (0 <= i);
-				
+			{	
 				const float2 sample_uv = UV + pixel_uv_size * float2(i, j);
-				
+
+				// 近傍ピクセルのShadingModelチェック.
 				const float4 neighbor_gbuffer_b = Texture2DSample(pass1_tex_gbuffer_b_custom, pass1_sampler_screen, sample_uv);
 				const uint neighbor_shading_model = DecodeShadingModelId(neighbor_gbuffer_b.a);
 				if(neighbor_shading_model != k_test_shading_model_id)
@@ -174,44 +159,31 @@
 					continue;
 				}
 
+				// 近傍ピクセルのカラー.
 				float3 sample_scene_color = Texture2DSample(pass1_tex_scene_color, pass1_sampler_screen, sample_uv).xyz;
 				float3 sample_scene_color_sq = sample_scene_color*sample_scene_color;
-				if(up)
+
+				// Kuwahara-Filter用の格納領域.
+				uint lr_bit = 0;
+				lr_bit |= (0 >= i)? (1<<0) : 0;// left
+				lr_bit |= (0 <= i)? (1<<1) : 0;// right
+				uint region_bit = 0;
+				region_bit |= (0 >= j)? (lr_bit << 0) : 0;// up
+				region_bit |= (0 <= j)? (lr_bit << 2) : 0;// down
+				// left-up, right-up, left-down, right-down.
+				for(int ri = 0; 0 < region_bit; ++ri)
 				{
-					if(left)
+					if(region_bit & 0x01)
 					{
-						const int region_i = 0;
-						avg[region_i] += sample_scene_color;
-						avg_sq[region_i] += sample_scene_color_sq;
-						weight[region_i] += 1;
+						avg[ri] += sample_scene_color;// 平均用
+						avg_sq[ri] += sample_scene_color_sq;// 二乗の平均用
+						weight[ri] += 1;// blend weight
 					}
-					if(right)
-					{
-						const int region_i = 1;
-						avg[region_i] += sample_scene_color;
-						avg_sq[region_i] += sample_scene_color_sq;
-						weight[region_i] += 1;
-					}
-				}
-				if(down)
-				{
-					if(left)
-					{
-						const int region_i = 2;
-						avg[region_i] += sample_scene_color;
-						avg_sq[region_i] += sample_scene_color_sq;
-						weight[region_i] += 1;
-					}
-					if(right)
-					{
-						const int region_i = 3;
-						avg[region_i] += sample_scene_color;
-						avg_sq[region_i] += sample_scene_color_sq;
-						weight[region_i] += 1;
-					}
+					region_bit = (region_bit >> 1);
 				}
 			}
 		}
+		// 平均化.
 		for(int i = 0; i < 4; ++i)
 		{
 			const float region_div = (0 < weight[i])? 1.0 / weight[i] : 1;
@@ -219,49 +191,19 @@
 			avg_sq[i] *= region_div;
 		}
 
+		// チャンネル別分散とその合計を計算.
 		float var[4];
 		for(int i = 0; i < 4; ++i)
 		{
-			const float3 var_rgb = avg_sq[i] - avg[i]*avg[i];
-			var[i] = var_rgb.x + var_rgb.y + var_rgb.z;
+			const float3 var_rgb = avg_sq[i] - avg[i]*avg[i];// 分散 = 二乗の平均 - 平均の二乗
+			var[i] = dot(var_rgb, float3(1,1,1));// チャンネル合計.
 		}
 
+		// 分散が最小の領域の平均を採用.
 		int min_region_i01 = (var[0] < var[1]) ? 0 : 1;
 		int min_region_i23 = (var[2] < var[3]) ? 2 : 3;
 		int min_region = (var[min_region_i01] < var[min_region_i23]) ? min_region_i01 : min_region_i23;
-		
 		return float4(avg[min_region], 0);
-		
-#else
-		float4 accum_color = (float4)0;
-		float accum_weight = 0;
-		const float2 pixel_uv_size = 1.0 / float2(pass1_tex_dimensions.x, pass1_tex_dimensions.y);
-		const int kernel_radius = 4;
-		for(int j = -kernel_radius; j < kernel_radius; ++j)
-		{
-			for(int i = -kernel_radius; i < kernel_radius; ++i)
-			{
-				const float2 sample_uv = UV + pixel_uv_size * float2(i, j);
-				const float4 neighbor_gbuffer_b = Texture2DSample(pass1_tex_gbuffer_b_custom, pass1_sampler_screen, sample_uv);
-				const uint neighbor_shading_model = DecodeShadingModelId(neighbor_gbuffer_b.a);
-				if(neighbor_shading_model != k_test_shading_model_id)
-				{
-					continue;
-				}
-				
-				float4 neighbor_scene_color = Texture2DSample(pass1_tex_scene_color, pass1_sampler_screen, sample_uv);
-
-				// bilateral.
-				const float color_distance = distance(neighbor_scene_color.xyz, scene_color.xyz);
-				const float weight = pow(1.0/(color_distance+1), 4);
-				accum_color += neighbor_scene_color * weight;
-				accum_weight += weight;
-			}
-		}
-
-		accum_color = (0 < accum_weight)? accum_color/accum_weight : scene_color;
-		return accum_color;
-#endif
 
 	#if 0
 		// デバッグ用.

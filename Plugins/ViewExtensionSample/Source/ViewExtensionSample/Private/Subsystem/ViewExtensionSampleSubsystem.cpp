@@ -27,7 +27,7 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->enable_voronoi_tile_cell = enable_voronoi_tile_cell;
 
 			
-			subsystem->enable_gbuffer_modify = enable_gbuffer_modify;
+			subsystem->enable_shadingmodel_only_filter = enable_shadingmodel_only_filter;
 		}
 	}
 }

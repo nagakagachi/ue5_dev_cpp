@@ -43,7 +43,7 @@ public:
 
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	bool enable_gbuffer_modify = false;
+	bool enable_shadingmodel_only_filter = false;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -68,6 +68,6 @@ public:
 	bool enable_voronoi_tile_cell = true;
 	int edge_debug_view = 0;
 
-	bool enable_gbuffer_modify = false;
+	bool enable_shadingmodel_only_filter = false;
 
 };
