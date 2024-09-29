@@ -33,4 +33,6 @@ private:
 	UViewExtensionSampleSubsystem* ManageSubsystem;
 
 	FRDGTextureRef	FrameExtendGBuffer{};
+	
+	TRefCountPtr<IPooledRenderTarget> HistoryTexture{};
 };

@@ -23,6 +23,8 @@ float2 SampleRandomFloat2Float2(float2 st) {
 	uint2 pass0_SourceDimensions;
 	SamplerState pass0_SourceSampler;
 
+	Texture2D pass0_HistoryTexture;
+
 	RWTexture2D<float4> pass0_OutputTexture;
 	uint2 pass0_OutputDimensions;
 
@@ -41,7 +43,7 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		float4 source_color = pass0_SourceTexture.Load(uint3(DTid.xy, 0));
 
 		const float2 vec_to_nearest_edge = voronoi_value.xy - pixel_pos;
-		const bool is_edge = all(0 == vec_to_nearest_edge.xy);
+		const bool is_edge = all(1 > vec_to_nearest_edge.xy);
 		const float len_to_nearest_edge = length(vec_to_nearest_edge);
 		const float2 dir_to_nearest_edge = (is_edge)? float2(1,0) : normalize(vec_to_nearest_edge);
 
@@ -72,6 +74,14 @@ float2 SampleRandomFloat2Float2(float2 st) {
 			float4 voronoi_source_color = pass0_SourceTexture.Load(uint3(voronoi_value.xy, 0));
 			voronoi_source_color = lerp(source_color, voronoi_source_color, saturate(len_to_nearest_edge / 5.0));
 			pass0_OutputTexture[DTid.xy] = voronoi_source_color;
+			return;
+		}
+		if(5 == pass0_VisualizeMode)
+		{
+			float4 prev_color = pass0_HistoryTexture.Load(uint3(DTid.xy, 0));
+
+			const float temporal_rate = lerp(0.0, 0.9, saturate(len_to_nearest_edge / 100.0));
+			pass0_OutputTexture[DTid.xy] = lerp(source_color, prev_color, temporal_rate);
 			return;
 		}
 		

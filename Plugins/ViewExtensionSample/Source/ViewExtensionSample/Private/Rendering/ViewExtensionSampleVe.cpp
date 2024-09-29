@@ -11,6 +11,8 @@
 
 #include <bit>
 
+#include "Experimental/Graph/GraphConvert.h"
+
 FViewExtensionSampleVe::FViewExtensionSampleVe(const FAutoRegister& AutoRegister, UViewExtensionSampleSubsystem* InWorldSubsystem)
 	: FSceneViewExtensionBase(AutoRegister), ManageSubsystem(InWorldSubsystem)
 {
@@ -215,8 +217,41 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
-	
 	const auto& input_scene_textures = Inputs.SceneTextures->GetParameters();
+
+
+	// History Texture.
+	FRDGTextureRef NewHistoryTexture{};
+	FRDGTextureRef PrevHistoryTexture{};
+	{
+		FRDGTextureDesc WorkOutputDesc = {};;
+		{
+			const auto scene_color_desc = SceneColor.Texture->Desc;
+			
+			WorkOutputDesc = FRDGTextureDesc::Create2D(
+				scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
+				ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable|ETextureCreateFlags::UAV
+				);
+		}
+		// 現フレームから次フレームへ送り出すHistoryTexture.
+		NewHistoryTexture = GraphBuilder.CreateTexture(WorkOutputDesc, TEXT("NagaViewExtensionHistoryTexture"));
+
+		// 前フレームのHistoryTexture.
+		if(HistoryTexture.IsValid())
+		{
+			PrevHistoryTexture = GraphBuilder.RegisterExternalTexture(HistoryTexture);
+		}
+		else
+		{
+			// 初回フレームの場合は安全策.
+			PrevHistoryTexture = GraphBuilder.CreateTexture(WorkOutputDesc, TEXT("NagaViewExtensionHistoryTexture"));
+			//AddClearRenderTargetPass(GraphBuilder, prev_history_texture);
+			AddCopyTexturePass(GraphBuilder, SceneColor.Texture, PrevHistoryTexture);
+		}
+	}
+	
+
+	
 	// ToonPass.
 	if(ManageSubsystem->enable_shadingmodel_only_filter)
 	{
@@ -345,12 +380,14 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			}
 
 			FRDGTextureUAVRef SceneColorUav = GraphBuilder.CreateUAV(SceneColor.Texture);
-			FTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FTestCS::FParameters>();
+			FTestFinalCS::FParameters* Parameters = GraphBuilder.AllocParameters<FTestFinalCS::FParameters>();
 			{
 				Parameters->pass0_SourceTexture = WorkSceneColorTexture;
 				Parameters->pass0_VoronoiWorkTexture = voronoi_texture;
 				Parameters->pass0_SourceSampler = PointClampSampler;
 				Parameters->pass0_SourceDimensions = WorkRect;
+
+				Parameters->pass0_HistoryTexture = PrevHistoryTexture;
 
 				Parameters->pass0_OutputTexture = SceneColorUav;
 				Parameters->pass0_SourceDimensions = WorkRect;
@@ -358,13 +395,24 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->pass0_VisualizeMode = ManageSubsystem->edge_debug_view;
 			}
 		
-			TShaderMapRef<FTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			TShaderMapRef<FTestFinalCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
 			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
 					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
 		
 			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 		}
+	}
+
+	// Historyテスト.
+	if(ManageSubsystem->enable_history_test)
+	{
+		// SceneColorを次フレームへのHistoryTextureへコピー.
+		FRHICopyTextureInfo copy_info{};
+		AddCopyTexturePass(GraphBuilder, SceneColor.Texture, NewHistoryTexture, copy_info);
+
+		// HistoryTextureをExtractionして次フレーム利用へ.
+		GraphBuilder.QueueTextureExtraction(NewHistoryTexture, &HistoryTexture);
 	}
 }
 

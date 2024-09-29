@@ -43,6 +43,9 @@ public:
 
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	bool enable_history_test = false;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	bool enable_shadingmodel_only_filter = false;
 };
 
@@ -68,6 +71,8 @@ public:
 	bool enable_voronoi_tile_cell = true;
 	int edge_debug_view = 0;
 
+	bool enable_history_test = false;
+	
 	bool enable_shadingmodel_only_filter = false;
 
 };

@@ -8,7 +8,7 @@ IMPLEMENT_GLOBAL_SHADER(FPrePostProcessToonVs, "/ViewExtensionSampleShaders/Priv
 IMPLEMENT_GLOBAL_SHADER(FPrePostProcessToonPs, "/ViewExtensionSampleShaders/Private/ResolveHackShadingModel.usf", "Pass1_PS", SF_Pixel );
 
 
-IMPLEMENT_GLOBAL_SHADER(FTestCS, "/ViewExtensionSampleShaders/Private/TestCompute.usf", "Pass0_CS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FTestFinalCS, "/ViewExtensionSampleShaders/Private/TestCompute.usf", "Pass0_CS", SF_Compute );
 IMPLEMENT_GLOBAL_SHADER(FImageProcessTestCS, "/ViewExtensionSampleShaders/Private/TestCompute.usf", "Pass1_CS", SF_Compute );
 /*
 */

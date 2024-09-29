@@ -105,21 +105,24 @@ public:
 
 
 
-class FTestCS : public FGlobalShader
+class FTestFinalCS : public FGlobalShader
 {
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
 	
 public:
-	DECLARE_GLOBAL_SHADER(FTestCS);
-	SHADER_USE_PARAMETER_STRUCT(FTestCS, FGlobalShader);
+	DECLARE_GLOBAL_SHADER(FTestFinalCS);
+	SHADER_USE_PARAMETER_STRUCT(FTestFinalCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, pass0_SourceTexture)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, pass0_VoronoiWorkTexture)
 		SHADER_PARAMETER(FUintVector2, pass0_SourceDimensions)
 		SHADER_PARAMETER_SAMPLER(SamplerState, pass0_SourceSampler)
+
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, pass0_HistoryTexture)
+	
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, pass0_OutputTexture)
 		SHADER_PARAMETER(FUintVector2, pass0_OutputDimensions)
 

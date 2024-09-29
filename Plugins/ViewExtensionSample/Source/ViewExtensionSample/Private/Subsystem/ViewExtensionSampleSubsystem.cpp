@@ -26,6 +26,7 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->edge_debug_view = edge_debug_view;
 			subsystem->enable_voronoi_tile_cell = enable_voronoi_tile_cell;
 
+			subsystem->enable_history_test = enable_history_test;
 			
 			subsystem->enable_shadingmodel_only_filter = enable_shadingmodel_only_filter;
 		}
