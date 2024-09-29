@@ -29,6 +29,8 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->enable_history_test = enable_history_test;
 			
 			subsystem->enable_shadingmodel_only_filter = enable_shadingmodel_only_filter;
+
+			subsystem->enable_aniso_kuwahara = enable_aniso_kuwahara;
 		}
 	}
 }

@@ -103,6 +103,10 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
+	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+
+	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
+	
 	// GBuffer操作.
 	if(ManageSubsystem->enable_shadingmodel_only_filter)
 	{
@@ -141,9 +145,6 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 			TShaderMapRef<FPostBasePassModifyGBufferVs> VertexShader(GlobalShaderMap);
 			TShaderMapRef<FPostBasePassModifyGBufferPs> PixelShader(GlobalShaderMap);
 
-			
-			FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
-			
 			FPostBasePassModifyGBufferPs::FParameters* Parameters = GraphBuilder.AllocParameters<FPostBasePassModifyGBufferPs::FParameters>();
 			{
 				Parameters->pass0_sampler_screen = PointClampSampler;
@@ -156,7 +157,6 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 				Parameters->RenderTargets[1] = RenderTargets[RT_GB_BcAo];
 			}
 			
-			const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
 			FRHIBlendState* BlendState =
 				TStaticBlendState<
 					CW_RGBA, BO_Add, BF_One, BF_Zero, BO_Add, BF_One, BF_Zero,
@@ -250,8 +250,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		}
 	}
 	
-
-	
 	// ToonPass.
 	if(ManageSubsystem->enable_shadingmodel_only_filter)
 	{
@@ -311,6 +309,142 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		}
 	}
 
+
+	// Aniso Kuwahara.
+	if(ManageSubsystem->enable_aniso_kuwahara)
+	{
+		FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
+		
+		FRDGTextureRef tex_eigenvector = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
+				EPixelFormat::PF_FloatRGBA,
+				{},
+				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
+			), TEXT("AnisoKuwaharaEigen"));
+		
+		FRDGTextureRef tex_eigenvector_blurwork = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				tex_eigenvector->Desc.Extent,
+				tex_eigenvector->Desc.Format,
+				{},
+				tex_eigenvector->Desc.Flags
+			), TEXT("AnisoKuwaharaEigen"));
+
+		FRDGTextureRef tex_aniso = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				tex_eigenvector->Desc.Extent,
+				tex_eigenvector->Desc.Format,
+				{},
+				tex_eigenvector->Desc.Flags
+			), TEXT("AnisoKuwaharaAniso"));
+		
+		// Eigenvector.
+		{
+			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_eigenvector);
+			FAnisoKuwaharaEigenvectorCS::FParameters* Parameters = GraphBuilder.AllocParameters<FAnisoKuwaharaEigenvectorCS::FParameters>();
+			{
+				Parameters->eigenvectorpass_SourceTexture = SceneColor.Texture;
+				Parameters->eigenvectorpass_SourceDimensions = WorkRect;
+				Parameters->eigenvectorpass_SourceSampler = PointClampSampler;
+
+				Parameters->eigenvectorpass_OutputTexture = WorkUav;
+				Parameters->eigenvectorpass_OutputDimensions = WorkRect;
+			}
+		
+			TShaderMapRef<FAnisoKuwaharaEigenvectorCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("AnisoKuwaharaEigenvector"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+
+		// Blur.
+		{
+			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_eigenvector_blurwork);
+			FAnisoKuwaharaBlurCS::FParameters* Parameters = GraphBuilder.AllocParameters<FAnisoKuwaharaBlurCS::FParameters>();
+			{
+				Parameters->blurpass_SourceTexture = tex_eigenvector;
+				Parameters->blurpass_SourceDimensions = WorkRect;
+				Parameters->blurpass_SourceSampler = PointClampSampler;
+
+				Parameters->blurpass_OutputTexture = WorkUav;
+				Parameters->blurpass_OutputDimensions = WorkRect;
+			}
+		
+			TShaderMapRef<FAnisoKuwaharaBlurCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("AnisoKuwaharaBlur"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+		
+		// CalcAniso.
+		{
+			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_aniso);
+			FAnisoKuwaharaCalcAnisoCS::FParameters* Parameters = GraphBuilder.AllocParameters<FAnisoKuwaharaCalcAnisoCS::FParameters>();
+			{
+				Parameters->calcanisopass_SourceTexture = tex_eigenvector_blurwork;
+				Parameters->calcanisopass_SourceDimensions = WorkRect;
+				Parameters->calcanisopass_SourceSampler = PointClampSampler;
+
+				Parameters->calcanisopass_OutputTexture = WorkUav;
+				Parameters->calcanisopass_OutputDimensions = WorkRect;
+			}
+		
+			TShaderMapRef<FAnisoKuwaharaCalcAnisoCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("AnisoKuwaharaBlur"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+
+		
+		FRDGTextureDesc TexSceneColorCopyDesc = {};;
+		{
+			const auto scene_color_desc = SceneColor.Texture->Desc;
+			
+			TexSceneColorCopyDesc = FRDGTextureDesc::Create2D(
+				scene_color_desc.Extent,
+				scene_color_desc.Format, scene_color_desc.ClearValue,
+				ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable|ETextureCreateFlags::UAV
+				);
+		}
+		// 現フレームから次フレームへ送り出すHistoryTexture.
+		FRDGTextureRef tex_scene_color_copy = GraphBuilder.CreateTexture(TexSceneColorCopyDesc, TEXT("NagaViewExtensionSceneColorCopy"));
+
+		// Copy.
+		{
+			FRHICopyTextureInfo copy_info{};
+			AddCopyTexturePass(GraphBuilder, SceneColor.Texture, tex_scene_color_copy, copy_info);
+		}
+		
+		// Final.
+		{
+			FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(SceneColor.Texture);
+			FAnisoKuwaharaFinalCS::FParameters* Parameters = GraphBuilder.AllocParameters<FAnisoKuwaharaFinalCS::FParameters>();
+			{
+				Parameters->finalpass_SourceTexture = tex_aniso;
+				Parameters->finalpass_SourceDimensions = WorkRect;
+				Parameters->finalpass_SourceSampler = PointClampSampler;
+
+				Parameters->finalpass_SceneTexture = tex_scene_color_copy;
+
+				Parameters->finalpass_OutputTexture = WorkUav;
+				Parameters->finalpass_OutputDimensions = WorkRect;
+			}
+		
+			TShaderMapRef<FAnisoKuwaharaFinalCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("AnisoKuwaharaEigen"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+	}
 	
 	if(ManageSubsystem->enable_test_compute)
 	{
@@ -404,6 +538,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		}
 	}
 
+	
 	// Historyテスト.
 	if(ManageSubsystem->enable_history_test)
 	{

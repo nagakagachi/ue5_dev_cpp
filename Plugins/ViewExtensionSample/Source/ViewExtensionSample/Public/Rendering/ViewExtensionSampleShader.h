@@ -189,3 +189,152 @@ public:
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
 	}
 };
+
+
+
+class FAnisoKuwaharaEigenvectorCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaEigenvectorCS);
+	SHADER_USE_PARAMETER_STRUCT(FAnisoKuwaharaEigenvectorCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, eigenvectorpass_SourceTexture)
+		SHADER_PARAMETER(FUintVector2, eigenvectorpass_SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, eigenvectorpass_SourceSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, eigenvectorpass_OutputTexture)
+		SHADER_PARAMETER(FUintVector2, eigenvectorpass_OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		
+		// Thread Group数マクロ指定.
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+	}
+};
+class FAnisoKuwaharaCalcAnisoCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaCalcAnisoCS);
+	SHADER_USE_PARAMETER_STRUCT(FAnisoKuwaharaCalcAnisoCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, calcanisopass_SourceTexture)
+		SHADER_PARAMETER(FUintVector2, calcanisopass_SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, calcanisopass_SourceSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, calcanisopass_OutputTexture)
+		SHADER_PARAMETER(FUintVector2, calcanisopass_OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		
+		// Thread Group数マクロ指定.
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+	}
+};
+class FAnisoKuwaharaBlurCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaBlurCS);
+	SHADER_USE_PARAMETER_STRUCT(FAnisoKuwaharaBlurCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, blurpass_SourceTexture)
+		SHADER_PARAMETER(FUintVector2, blurpass_SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, blurpass_SourceSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, blurpass_OutputTexture)
+		SHADER_PARAMETER(FUintVector2, blurpass_OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		
+		// Thread Group数マクロ指定.
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+	}
+};
+class FAnisoKuwaharaFinalCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaFinalCS);
+	SHADER_USE_PARAMETER_STRUCT(FAnisoKuwaharaFinalCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, finalpass_SourceTexture)
+		SHADER_PARAMETER(FUintVector2, finalpass_SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, finalpass_SourceSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, finalpass_SceneTexture)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, finalpass_OutputTexture)
+		SHADER_PARAMETER(FUintVector2, finalpass_OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		
+		// Thread Group数マクロ指定.
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+	}
+};

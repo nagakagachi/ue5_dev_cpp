@@ -47,6 +47,9 @@ public:
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	bool enable_shadingmodel_only_filter = false;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	bool enable_aniso_kuwahara = false;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -75,4 +78,5 @@ public:
 	
 	bool enable_shadingmodel_only_filter = false;
 
+	bool enable_aniso_kuwahara = false;
 };
