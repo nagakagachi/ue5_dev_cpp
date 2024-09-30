@@ -121,11 +121,12 @@
 		const float G = eigenvector.y;
 		const float F = eigenvector.z;
 
-		const float term_sqrt = sqrt( (E-G)*(E-G) + 4.0*F*F );
+		const float sqrt_innner_term = (E-G)*(E-G) + 4.0*F*F;
+		const float term_sqrt = (1e-4 < sqrt_innner_term)? sqrt( sqrt_innner_term ) : 0.0;
 		float lambda1 = (E + G + term_sqrt) * 0.5;
 		float lambda2 = (E + G - term_sqrt) * 0.5;
 
-		const float anisotropy = (all(0.0 < float2(lambda1, lambda2)))? (lambda1 - lambda2) / (lambda1 + lambda2) : 0.0;
+		const float anisotropy = (1e-4 < (lambda1 + lambda2))? (lambda1 - lambda2) / (lambda1 + lambda2) : 0.0;
 		const float2 v = float2(lambda1 - E, -F);
 		const float2 t = (any(0 < abs(v)))? normalize(v) : float2(0.0f, 1.0f);
 		const float phi = -atan2(t.y, t.x);
@@ -154,7 +155,7 @@
 		uint Gi		: SV_GroupIndex
 		)
 	{
-		const int k_kernel_radius = 8;
+		const int k_kernel_radius = 7;
 		const float k_aniso_param = 1.0;
 		
 		const int2 pixel_point = DTid.xy;
@@ -162,6 +163,23 @@
 		float4 aniso_data = finalpass_SourceTexture.Load(int3(pixel_point, 0));
 		float4 cur_color = finalpass_SceneTexture.Load(int3(pixel_point, 0));
 
+#if 0
+		const float eigenvector_len = length(aniso_data.xy);
+		const float2 eigenvector_dir = (0.0 < eigenvector_len)? aniso_data.xy/eigenvector_len : float2(0,0);
+
+		float4 accum_color = (float4)0;
+		for(int i = 0; i < 32; ++i)
+		{
+			const float4 n_color = finalpass_SceneTexture.Load(int3(pixel_point + eigenvector_dir * clamp(aniso_data.w, 0.1, 2.0) * i , 0));
+			const float w = 1.0 / (i+1);
+			accum_color.xyz += n_color.xyz * w;
+			accum_color.w += w;
+		}
+		accum_color.xyz /= accum_color.w;
+		
+		finalpass_OutputTexture[DTid.xy] = float4(accum_color.xyz, 0);
+		
+#else
 		const float cos_phi = cos(aniso_data.z);
 		const float sin_phi = sin(aniso_data.z);
 		const float2x2 R = float2x2(cos_phi, -sin_phi, sin_phi, cos_phi);
@@ -174,6 +192,17 @@
 		// 異方性方向キャンセルと異方性スケールキャンセルの行列.
 		float2x2 SR = mul(S, R);
 
+#if 1
+		const int sample_radius_x = k_kernel_radius;
+		const int sample_radius_y = k_kernel_radius;
+#else
+		const int aniso_sample_max_x = int(sqrt(scale_a * scale_a * cos_phi * cos_phi + scale_b * scale_b * sin_phi * sin_phi));
+		const int aniso_sample_max_y = int(sqrt(scale_a * scale_a * sin_phi * sin_phi + scale_b * scale_b * cos_phi * cos_phi));
+		
+		const int sample_radius_x = aniso_sample_max_x;
+		const int sample_radius_y = aniso_sample_max_y;
+#endif
+		
 		const float zeta = 2.0 / k_kernel_radius;
 		const float gamma = 3.0 * PI / (2.0 * k_aniso_kuwahara_section_count);
 		const float eta = (zeta + cos(gamma)) / (sin(gamma)*sin(gamma));
@@ -184,13 +213,13 @@
 			m[k] = 0.0;
 			s[k] = 0.0;
 		}
-		for(int j = -k_kernel_radius; j <= k_kernel_radius; ++j)
+		for(int j = -sample_radius_y; j <= sample_radius_y; ++j)
 		{
-			for(int i = -k_kernel_radius; i <= k_kernel_radius; ++i)
+			for(int i = -sample_radius_x; i <= sample_radius_x; ++i)
 			{
 				const int2 sample_offset = int2(i, j);
 				const float2 normalize_sample_offset = mul(SR, float2(sample_offset));
-					
+				
 				float3 sample_color = finalpass_SceneTexture.Load(int3(pixel_point + sample_offset, 0)).xyz;
 
 				//--------------------
@@ -233,7 +262,6 @@
 	            sum += w[7];
 	            
 	            float g = (0.0 < sum)? exp(-3.125f * dot(v,v)) / sum : 0.0;
-	            
 	            for (int k = 0; k < k_aniso_kuwahara_section_count; ++k)
 	            {
 	                float wk = w[k] * g;
@@ -244,6 +272,9 @@
 			}
 		}
 		
+		const float k_hardness = 256;//8.0;
+		const float k_sharpness = 8.0;
+		
 		float4 output = (float4)0;
 		for (int k = 0; k < k_aniso_kuwahara_section_count; ++k)
 		{
@@ -252,16 +283,14 @@
 			s[k] = abs(s[k] * weight_div - m[k].rgb * m[k].rgb);
 
 			float sigma2 = s[k].r + s[k].g + s[k].b;
-			//float w = 1.0f / (1.0f + pow(_Hardness * 1000.0f * sigma2, 0.5f * _Q));
-			float w = 1.0f / (1.0f + pow(1000.0 * sigma2, 8.0));
+			float w = 1.0f / (1.0f + pow( k_hardness * 1000.0 * sigma2, k_sharpness));
 
 			output += float4(m[k].rgb * w, w);
 		}
 		output.xyz = (0.0 < output.w)? output.xyz/output.w : cur_color.xyz;
+		//output.xyz = (0.0 < output.w)? output.xyz/output.w : float3(0,0,0);
 		
 		finalpass_OutputTexture[DTid.xy] = float4(output.xyz, 0);
-		
-		//finalpass_OutputTexture[DTid.xy] = float4(abs(v0), 1);
-		//finalpass_OutputTexture[DTid.xy] = float4(abs(v0.xy) * v0.w, 0, 1);
+#endif
 	}
 
