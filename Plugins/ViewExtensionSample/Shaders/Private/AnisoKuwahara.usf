@@ -125,7 +125,7 @@
 		float lambda1 = (E + G + term_sqrt) * 0.5;
 		float lambda2 = (E + G - term_sqrt) * 0.5;
 
-		const float anisotropy = (all(0.0 < float2(lambda1, lambda2)))? (lambda1 - lambda2) / (lambda1 + lambda2) : 0.0;
+		const float anisotropy = (any(0.0 < float2(lambda1, lambda2)))? (lambda1 - lambda2) / (lambda1 + lambda2) : 0.0;
 		const float2 v = float2(lambda1 - E, -F);
 		const float2 t = (any(0 < abs(v)))? normalize(v) : float2(0.0f, 1.0f);
 		const float phi = -atan2(t.y, t.x);
