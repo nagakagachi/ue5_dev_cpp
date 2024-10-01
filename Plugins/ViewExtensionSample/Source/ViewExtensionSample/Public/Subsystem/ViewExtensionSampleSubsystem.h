@@ -47,9 +47,16 @@ public:
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	bool enable_shadingmodel_only_filter = false;
+
 	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="AnisoKuwahara")
 	bool enable_aniso_kuwahara = false;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="AnisoKuwahara")
+	float aniso_kuwahara_aniso_control = 1.0f;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="AnisoKuwahara")
+	float aniso_kuwahara_hardness = 8.0f;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="AnisoKuwahara")
+	float aniso_kuwahara_sharpness = 8.0f;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -79,4 +86,7 @@ public:
 	bool enable_shadingmodel_only_filter = false;
 
 	bool enable_aniso_kuwahara = false;
+	float aniso_kuwahara_aniso_control = 1.0f;
+	float aniso_kuwahara_hardness = 8.0f;
+	float aniso_kuwahara_sharpness = 8.0f;
 };

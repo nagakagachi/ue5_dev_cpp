@@ -31,6 +31,9 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->enable_shadingmodel_only_filter = enable_shadingmodel_only_filter;
 
 			subsystem->enable_aniso_kuwahara = enable_aniso_kuwahara;
+			subsystem->aniso_kuwahara_aniso_control = aniso_kuwahara_aniso_control;
+			subsystem->aniso_kuwahara_hardness = aniso_kuwahara_hardness;
+			subsystem->aniso_kuwahara_sharpness = aniso_kuwahara_sharpness;
 		}
 	}
 }

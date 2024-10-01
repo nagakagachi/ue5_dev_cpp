@@ -435,6 +435,10 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 
 				Parameters->finalpass_OutputTexture = WorkUav;
 				Parameters->finalpass_OutputDimensions = WorkRect;
+
+				Parameters->finalpass_aniso_control = ManageSubsystem->aniso_kuwahara_aniso_control;// 1.0f;
+				Parameters->finalpass_hardness = ManageSubsystem->aniso_kuwahara_hardness;//8.0f;
+				Parameters->finalpass_sharpness = ManageSubsystem->aniso_kuwahara_sharpness;//8.0f;
 			}
 		
 			TShaderMapRef<FAnisoKuwaharaFinalCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));

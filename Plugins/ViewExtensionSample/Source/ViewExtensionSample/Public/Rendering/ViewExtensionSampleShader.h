@@ -319,6 +319,11 @@ public:
 	
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, finalpass_OutputTexture)
 		SHADER_PARAMETER(FUintVector2, finalpass_OutputDimensions)
+
+		SHADER_PARAMETER(float, finalpass_aniso_control)	// 1
+		SHADER_PARAMETER(float, finalpass_hardness)			// 8
+		SHADER_PARAMETER(float, finalpass_sharpness)		// 8
+	
 	END_SHADER_PARAMETER_STRUCT()
 
 	//Called by the engine to determine which permutations to compile for this shader

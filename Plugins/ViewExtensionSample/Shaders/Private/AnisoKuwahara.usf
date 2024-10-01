@@ -145,6 +145,10 @@
 	RWTexture2D<float4> finalpass_OutputTexture;
 	uint2 finalpass_OutputDimensions;
 
+	float finalpass_aniso_control; // 1
+	float finalpass_hardness; // 8
+	float finalpass_sharpness; // 8
+
 	#define k_aniso_kuwahara_section_count 8
 
 	[numthreads(THREADGROUPSIZE_X,THREADGROUPSIZE_Y,THREADGROUPSIZE_Z)]
@@ -156,7 +160,7 @@
 		)
 	{
 		const int k_kernel_radius = 7;
-		const float k_aniso_param = 1.0;
+		const float k_aniso_param = finalpass_aniso_control;//1.0;
 		
 		const int2 pixel_point = DTid.xy;
 
@@ -272,8 +276,8 @@
 			}
 		}
 		
-		const float k_hardness = 256;//8.0;
-		const float k_sharpness = 8.0;
+		const float k_hardness = finalpass_hardness;//256;
+		const float k_sharpness = finalpass_sharpness;//8.0;
 		
 		float4 output = (float4)0;
 		for (int k = 0; k < k_aniso_kuwahara_section_count; ++k)
