@@ -1,5 +1,11 @@
-// AnisoKuwahara.usf
+/*
+	AnisoKuwahara.usf
 
+https://www.kyprianidis.com/p/pg2009/jkyprian-pg2009.pdf
+https://diglib.eg.org/server/api/core/bitstreams/3309663a-3134-44bc-9297-2fa33554277d/content
+https://github.com/GarrettGunnell/Post-Processing
+
+*/
 #include "/Engine/Private/Common.ush"
 #include "/Engine/Private/DeferredShadingCommon.ush"
 
