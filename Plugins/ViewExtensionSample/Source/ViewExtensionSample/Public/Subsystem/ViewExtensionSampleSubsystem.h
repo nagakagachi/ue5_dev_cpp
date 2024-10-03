@@ -30,23 +30,21 @@ public:
 
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	bool enable_test_compute = true;
-	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	float depth_edge_coef = 0.02f;
-	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	bool enable_voronoi_tile_cell = true;
-	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample", meta = (ClampMin = 0))
-	int edge_debug_view = 0;
-
-	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	bool enable_history_test = false;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
 	bool enable_shadingmodel_only_filter = false;
+
+
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
+	bool enable_voronoi_test = true;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
+	float depth_edge_coef = 0.02f;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
+	bool enable_voronoi_tile_cell = true;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest", meta = (ClampMin = 0))
+	int edge_debug_view = 0;
 
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="AnisoKuwahara")
@@ -57,6 +55,10 @@ public:
 	float aniso_kuwahara_hardness = 8.0f;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="AnisoKuwahara")
 	float aniso_kuwahara_sharpness = 8.0f;
+
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost")
+	bool enable_lensh_ghost = false;
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -76,7 +78,7 @@ private:
 public:
 	friend class FViewExtensionSampleVe;
 
-	bool enable_test_compute = false;
+	bool enable_voronoi_test = false;
 	float depth_edge_coef = 0.02f;
 	bool enable_voronoi_tile_cell = true;
 	int edge_debug_view = 0;
@@ -89,4 +91,6 @@ public:
 	float aniso_kuwahara_aniso_control = 1.0f;
 	float aniso_kuwahara_hardness = 8.0f;
 	float aniso_kuwahara_sharpness = 8.0f;
+
+	bool enable_lensh_ghost = true;
 };

@@ -21,7 +21,7 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 		auto* subsystem = GEngine->GetEngineSubsystem<UViewExtensionSampleSubsystem>();
 		if(subsystem)
 		{
-			subsystem->enable_test_compute = enable_test_compute;
+			subsystem->enable_voronoi_test = enable_voronoi_test;
 			subsystem->depth_edge_coef = depth_edge_coef;
 			subsystem->edge_debug_view = edge_debug_view;
 			subsystem->enable_voronoi_tile_cell = enable_voronoi_tile_cell;
@@ -34,6 +34,8 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->aniso_kuwahara_aniso_control = aniso_kuwahara_aniso_control;
 			subsystem->aniso_kuwahara_hardness = aniso_kuwahara_hardness;
 			subsystem->aniso_kuwahara_sharpness = aniso_kuwahara_sharpness;
+
+			subsystem->enable_lensh_ghost = enable_lensh_ghost;
 		}
 	}
 }

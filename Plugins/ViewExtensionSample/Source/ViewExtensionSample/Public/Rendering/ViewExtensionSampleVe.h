@@ -28,9 +28,16 @@ public:
 	virtual void PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs) override;
 	//~ End FSceneViewExtensionBase Interface
 public:
+
+private:
+	// SceneTextureをソースにSceneTextureへ書き込み.
+	void AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs);
+	
+	// SceneTextureをソースにSceneTextureへ書き込み.
+	void AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs);
 	
 private:
-	UViewExtensionSampleSubsystem* ManageSubsystem;
+	UViewExtensionSampleSubsystem* subsystem{};
 
 	FRDGTextureRef	FrameExtendGBuffer{};
 	
