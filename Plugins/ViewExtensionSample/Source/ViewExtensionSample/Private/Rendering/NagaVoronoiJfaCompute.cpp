@@ -49,7 +49,7 @@ public:
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
 	}
 };
-IMPLEMENT_GLOBAL_SHADER(FVoronoiJumpFloodingCS, "/ViewExtensionSampleShaders/Private/VoronoiJfaCompute.usf", "MainCS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FVoronoiJumpFloodingCS, "/ViewExtensionSampleShaders/Private/voronoi_jfa_compute.usf", "MainCS", SF_Compute );
 
 
 
