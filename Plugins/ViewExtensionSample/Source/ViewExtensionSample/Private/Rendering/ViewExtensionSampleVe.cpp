@@ -12,6 +12,7 @@
 #include <bit>
 
 #include "Experimental/Graph/GraphConvert.h"
+#include "PostProcess/PostProcessMaterialInputs.h"
 
 FViewExtensionSampleVe::FViewExtensionSampleVe(const FAutoRegister& AutoRegister, UViewExtensionSampleSubsystem* InWorldSubsystem)
 	: FSceneViewExtensionBase(AutoRegister), subsystem(InWorldSubsystem)
@@ -330,11 +331,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	{	
 		AddAnisoKuwaharaPass(GraphBuilder, View, Inputs);
 	}
-
-	if(subsystem->enable_lens_ghost)
-	{
-		AddLensGhostPass(GraphBuilder, View, Inputs);
-	}
 	
 	if(subsystem->enable_voronoi_test)
 	{
@@ -438,6 +434,26 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 
 		// HistoryTextureをExtractionして次フレーム利用へ.
 		GraphBuilder.QueueTextureExtraction(NewHistoryTexture, &HistoryTexture);
+	}
+}
+
+void FViewExtensionSampleVe::SubscribeToPostProcessingPass(EPostProcessingPass PassId, FAfterPassCallbackDelegateArray& InOutPassCallbacks, bool bIsPassEnabled)
+{
+	// MotionBlur後, Tonemapの前.
+	if (PassId == EPostProcessingPass::MotionBlur)
+	{
+		if(subsystem->enable_lens_ghost)
+		{
+			InOutPassCallbacks.Add(FAfterPassCallbackDelegate::CreateLambda([this, InPassId = PassId](FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& InInputs)
+			{
+					const FScreenPassTexture& SceneColor = FScreenPassTexture::CopyFromSlice(GraphBuilder, InInputs.GetInput(EPostProcessMaterialInput::SceneColor));
+					check(SceneColor.IsValid());
+				
+					FRDGTextureRef PassOutputTexture = AddLensGhostPass(GraphBuilder, View, SceneColor.Texture);
+					return FScreenPassTexture(PassOutputTexture);
+				}));
+		}
+		
 	}
 }
 
@@ -585,7 +601,7 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 }
 
 
-void FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
+FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, FRDGTextureRef SourceTexture)
 {
 	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(View);
 	FUintVector2 InputRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
@@ -610,12 +626,20 @@ void FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const F
 			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
 		), TEXT("LensGhostBright"));
 
+	FRDGTextureRef tex_composite = GraphBuilder.CreateTexture(
+		FRDGTextureDesc::Create2D(
+			FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
+			EPixelFormat::PF_FloatRGBA,
+			{},
+			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
+		), TEXT("LensGhostBright"));
+	
 	// Extract Bright.
 	{
 		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_bright_seed);
 		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostExtractBrightCS::FParameters>();
 		{
-			Parameters->SourceTexture = Inputs.SceneTextures->GetParameters()->SceneColorTexture;
+			Parameters->SourceTexture = SourceTexture;
 			Parameters->SourceDimensions = InputRect;
 			Parameters->SourceSampler = PointClampSampler;
 
@@ -635,9 +659,9 @@ void FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const F
 		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_ghost);
 		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostGenerateCS::FParameters>();
 		{
-			Parameters->SourceTexture = tex_bright_seed;
-			Parameters->SourceDimensions = InputRect;
-			Parameters->SourceSampler = PointClampSampler;
+			Parameters->SeedTexture = tex_bright_seed;
+			Parameters->SeedDimensions = InputRect;
+			Parameters->SeedSampler = PointClampSampler;
 
 			Parameters->ghost_sample_count = subsystem->lens_ghost_sample_count;
 			Parameters->ghost_sample_step_scale = subsystem->lens_ghost_step_scale;
@@ -655,12 +679,15 @@ void FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const F
 	
 	// Composite.
 	{
-		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(Inputs.SceneTextures->GetParameters()->SceneColorTexture);
+		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_composite);
 		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostCompositeCS::FParameters>();
 		{
-			Parameters->SourceTexture = tex_ghost;
-			Parameters->SourceDimensions = InputRect;
-			Parameters->SourceSampler = PointClampSampler;
+			Parameters->LensGhostTexture = tex_ghost;
+			Parameters->LensGhostDimensions = InputRect;
+			
+			Parameters->SceneTexture = SourceTexture;
+			
+			Parameters->LensGhostSampler = PointClampSampler;
 			
 			Parameters->OutputTexture = WorkUav;
 			Parameters->OutputDimensions = InputRect;
@@ -668,8 +695,9 @@ void FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const F
 	
 		TShaderMapRef<FLensGhostCompositeCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
-		//FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
 		const auto DispatchGroupSize = CalcComputeDispatchGroupSizeHelper(cs, InputRect);
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("LensGhostComposite"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 	}
+	
+	return tex_composite;
 }

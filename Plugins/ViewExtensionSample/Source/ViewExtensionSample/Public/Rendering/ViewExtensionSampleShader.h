@@ -390,9 +390,9 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FLensGhostGenerateCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
-		SHADER_PARAMETER(FUintVector2, SourceDimensions)
-		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SeedTexture)
+		SHADER_PARAMETER(FUintVector2, SeedDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SeedSampler)
 	
 		SHADER_PARAMETER(int, ghost_sample_count)
 		SHADER_PARAMETER(float, ghost_sample_step_scale)
@@ -430,9 +430,10 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FLensGhostCompositeCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
-		SHADER_PARAMETER(FUintVector2, SourceDimensions)
-		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, LensGhostTexture)
+		SHADER_PARAMETER(FUintVector2, LensGhostDimensions)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneTexture)
+		SHADER_PARAMETER_SAMPLER(SamplerState, LensGhostSampler)
 	
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
 		SHADER_PARAMETER(FUintVector2, OutputDimensions)

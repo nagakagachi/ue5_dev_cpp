@@ -26,6 +26,12 @@ public:
 	 * Called right before Post Processing rendering begins
 	 */
 	virtual void PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs) override;
+
+	/**
+	* This will be called at the beginning of post processing to make sure that each view extension gets a chance to subscribe to an after pass event.
+	*/
+	virtual void SubscribeToPostProcessingPass(EPostProcessingPass PassId, FAfterPassCallbackDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
+	
 	//~ End FSceneViewExtensionBase Interface
 public:
 
@@ -34,7 +40,7 @@ private:
 	void AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs);
 	
 	// SceneTextureをソースにSceneTextureへ書き込み.
-	void AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs);
+	FRDGTextureRef AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, FRDGTextureRef SourceTexture);
 	
 private:
 	UViewExtensionSampleSubsystem* subsystem{};

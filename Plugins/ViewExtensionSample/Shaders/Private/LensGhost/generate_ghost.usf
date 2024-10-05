@@ -9,9 +9,9 @@ https://john-chapman-graphics.blogspot.com/2013/02/pseudo-lens-flare.html
 #include "/Engine/Private/DeferredShadingCommon.ush"
 
 
-Texture2D SourceTexture;
-uint2 SourceDimensions;
-SamplerState SourceSampler;
+Texture2D SeedTexture;
+uint2 SeedDimensions;
+SamplerState SeedSampler;
 
 RWTexture2D<float4> OutputTexture;
 uint2 OutputDimensions;
@@ -45,7 +45,7 @@ void MainCS(
 			const float2 sample_offset = ghost_sample_vec * (i);
 			const float2 sample_uv = frac(mirrored_uv + sample_offset);
 
-			const float4 sample_color = SourceTexture.SampleLevel(SourceSampler, sample_uv, 0);
+			const float4 sample_color = SeedTexture.SampleLevel(SeedSampler, sample_uv, 0);
 
 			const float w = pow(saturate(1.0 - (length(float2(0.5, 0.5) - sample_uv)/0.5)), 8.0);
 			accum_color += sample_color * w;
@@ -59,7 +59,7 @@ void MainCS(
 	{
 		const float2 sample_vec = normalize(ghost_sample_vec) * halo_sample_length;
 		const float2 sample_uv = frac(mirrored_uv + sample_vec);
-		const float4 sample_color = SourceTexture.SampleLevel(SourceSampler, sample_uv, 0);
+		const float4 sample_color = SeedTexture.SampleLevel(SeedSampler, sample_uv, 0);
 		
 		float w = length(float2(0.5, 0.5) - sample_uv) / length(float2(0.5, 0.5));
 		w = pow(1.0 - w, 5.0);
