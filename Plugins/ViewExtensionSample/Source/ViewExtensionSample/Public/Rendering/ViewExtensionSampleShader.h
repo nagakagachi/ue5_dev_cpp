@@ -355,9 +355,11 @@ public:
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
 		SHADER_PARAMETER(FUintVector2, SourceDimensions)
+		SHADER_PARAMETER(FVector2f, SourceValidRectScale)
 		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
 	
 		SHADER_PARAMETER(float, extract_threshold)
+		SHADER_PARAMETER(float, chroma_shift)
 
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
 		SHADER_PARAMETER(FUintVector2, OutputDimensions)
@@ -392,6 +394,7 @@ public:
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SeedTexture)
 		SHADER_PARAMETER(FUintVector2, SeedDimensions)
+		SHADER_PARAMETER(FVector2f, SeedValidRectScale)
 		SHADER_PARAMETER_SAMPLER(SamplerState, SeedSampler)
 	
 		SHADER_PARAMETER(int, ghost_sample_count)

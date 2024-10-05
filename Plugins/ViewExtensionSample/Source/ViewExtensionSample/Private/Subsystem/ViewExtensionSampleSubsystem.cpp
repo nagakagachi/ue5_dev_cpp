@@ -37,6 +37,7 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 
 			subsystem->enable_lens_ghost = enable_lensh_ghost;
 			subsystem->lens_ghost_bright_threshold = lens_ghost_bright_threshold;
+			subsystem->lens_ghost_chroma_shift = lens_ghost_chroma_shift;
 			subsystem->lens_ghost_sample_count = lensh_ghost_sample_count;
 			subsystem->lens_ghost_step_scale = lensh_ghost_step_scale;
 			subsystem->halo_sample_length = halo_sample_length;

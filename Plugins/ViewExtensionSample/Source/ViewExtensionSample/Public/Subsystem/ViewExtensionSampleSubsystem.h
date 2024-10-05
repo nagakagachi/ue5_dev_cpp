@@ -61,6 +61,8 @@ public:
 	bool enable_lensh_ghost = false;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost", meta = (ClampMin = 0.0))
 	float lens_ghost_bright_threshold = 0.9f;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost", meta = (ClampMin = 0.0))
+	float lens_ghost_chroma_shift = 0.0f;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost", meta = (ClampMin = 0, ClampMax = 16))
 	int lensh_ghost_sample_count = 5;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost")
@@ -103,6 +105,7 @@ public:
 
 	bool enable_lens_ghost = true;
 	float lens_ghost_bright_threshold = 0.9f;
+	float lens_ghost_chroma_shift = 0.0f;
 	int lens_ghost_sample_count = 5;
 	float lens_ghost_step_scale = 0.1f;
 	float halo_sample_length = 0.1f;

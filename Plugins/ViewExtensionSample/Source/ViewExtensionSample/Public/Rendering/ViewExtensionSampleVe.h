@@ -40,7 +40,7 @@ private:
 	void AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs);
 	
 	// SceneTextureをソースにSceneTextureへ書き込み.
-	FRDGTextureRef AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, FRDGTextureRef SourceTexture);
+	FScreenPassTexture AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FScreenPassTexture& SourceTexture);
 	
 private:
 	UViewExtensionSampleSubsystem* subsystem{};

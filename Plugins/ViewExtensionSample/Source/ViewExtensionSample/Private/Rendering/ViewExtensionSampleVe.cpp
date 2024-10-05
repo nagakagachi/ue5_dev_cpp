@@ -448,9 +448,10 @@ void FViewExtensionSampleVe::SubscribeToPostProcessingPass(EPostProcessingPass P
 			{
 					const FScreenPassTexture& SceneColor = FScreenPassTexture::CopyFromSlice(GraphBuilder, InInputs.GetInput(EPostProcessMaterialInput::SceneColor));
 					check(SceneColor.IsValid());
-				
-					FRDGTextureRef PassOutputTexture = AddLensGhostPass(GraphBuilder, View, SceneColor.Texture);
-					return FScreenPassTexture(PassOutputTexture);
+
+					// 内部でのテクスチャ全領域に対する描画領域の範囲を後段に伝えるためにFScreenPassTextureを返す.
+					FScreenPassTexture PassOutputTexture = AddLensGhostPass(GraphBuilder, View, SceneColor);
+					return PassOutputTexture;
 				}));
 		}
 		
@@ -601,10 +602,13 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 }
 
 
-FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, FRDGTextureRef SourceTexture)
+FScreenPassTexture FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FScreenPassTexture& SourceTexture)
 {
-	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(View);
-	FUintVector2 InputRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
+	const FScreenPassTextureViewport InputViewport(SourceTexture);
+	const FScreenPassTextureViewport OutputViewport(SourceTexture);
+	
+	//const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(View);
+	//FUintVector2 InputRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
 
 
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
@@ -612,7 +616,7 @@ FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilde
 	
 	FRDGTextureRef tex_bright_seed = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
-			FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
+			OutputViewport.Extent,
 			EPixelFormat::PF_FloatRGBA,
 			{},
 			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
@@ -620,7 +624,7 @@ FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilde
 	
 	FRDGTextureRef tex_ghost = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
-			FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
+			OutputViewport.Extent,
 			EPixelFormat::PF_FloatRGBA,
 			{},
 			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
@@ -628,22 +632,25 @@ FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilde
 
 	FRDGTextureRef tex_composite = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
-			FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
+			OutputViewport.Extent,
 			EPixelFormat::PF_FloatRGBA,
 			{},
 			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
 		), TEXT("LensGhostBright"));
-	
+
+	FUintVector2 InputRect = FUintVector2(InputViewport.Rect.Width(), InputViewport.Rect.Height());
 	// Extract Bright.
 	{
 		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_bright_seed);
 		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostExtractBrightCS::FParameters>();
 		{
-			Parameters->SourceTexture = SourceTexture;
+			Parameters->SourceTexture = SourceTexture.Texture;
 			Parameters->SourceDimensions = InputRect;
+			Parameters->SourceValidRectScale = FVector2f(InputRect.X, InputRect.Y) / SourceTexture.Texture->Desc.Extent;
 			Parameters->SourceSampler = PointClampSampler;
 
 			Parameters->extract_threshold = subsystem->lens_ghost_bright_threshold;
+			Parameters->chroma_shift = subsystem->lens_ghost_chroma_shift;
 			
 			Parameters->OutputTexture = WorkUav;
 			Parameters->OutputDimensions = InputRect;
@@ -661,6 +668,7 @@ FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilde
 		{
 			Parameters->SeedTexture = tex_bright_seed;
 			Parameters->SeedDimensions = InputRect;
+			Parameters->SeedValidRectScale = FVector2f(InputRect.X, InputRect.Y) / SourceTexture.Texture->Desc.Extent;
 			Parameters->SeedSampler = PointClampSampler;
 
 			Parameters->ghost_sample_count = subsystem->lens_ghost_sample_count;
@@ -685,7 +693,7 @@ FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilde
 			Parameters->LensGhostTexture = tex_ghost;
 			Parameters->LensGhostDimensions = InputRect;
 			
-			Parameters->SceneTexture = SourceTexture;
+			Parameters->SceneTexture = SourceTexture.Texture;
 			
 			Parameters->LensGhostSampler = PointClampSampler;
 			
@@ -699,5 +707,5 @@ FRDGTextureRef FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilde
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("LensGhostComposite"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 	}
 	
-	return tex_composite;
+	return FScreenPassTexture(tex_composite, InputViewport.Rect);
 }
