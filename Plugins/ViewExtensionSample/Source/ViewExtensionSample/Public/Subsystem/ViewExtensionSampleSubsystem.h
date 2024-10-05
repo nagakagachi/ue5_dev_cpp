@@ -59,6 +59,15 @@ public:
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost")
 	bool enable_lensh_ghost = false;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost", meta = (ClampMin = 0.0))
+	float lens_ghost_bright_threshold = 0.9f;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost", meta = (ClampMin = 0, ClampMax = 16))
+	int lensh_ghost_sample_count = 5;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost")
+	float lensh_ghost_step_scale = 0.1f;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost")
+	float halo_sample_length = 0.1f;
+	
 };
 
 // ViewExtensionインスタンス管理用Subsystem.
@@ -92,5 +101,9 @@ public:
 	float aniso_kuwahara_hardness = 8.0f;
 	float aniso_kuwahara_sharpness = 8.0f;
 
-	bool enable_lensh_ghost = true;
+	bool enable_lens_ghost = true;
+	float lens_ghost_bright_threshold = 0.9f;
+	int lens_ghost_sample_count = 5;
+	float lens_ghost_step_scale = 0.1f;
+	float halo_sample_length = 0.1f;
 };

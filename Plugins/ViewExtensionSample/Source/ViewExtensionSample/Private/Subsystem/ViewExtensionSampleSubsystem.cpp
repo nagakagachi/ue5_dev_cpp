@@ -35,7 +35,11 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->aniso_kuwahara_hardness = aniso_kuwahara_hardness;
 			subsystem->aniso_kuwahara_sharpness = aniso_kuwahara_sharpness;
 
-			subsystem->enable_lensh_ghost = enable_lensh_ghost;
+			subsystem->enable_lens_ghost = enable_lensh_ghost;
+			subsystem->lens_ghost_bright_threshold = lens_ghost_bright_threshold;
+			subsystem->lens_ghost_sample_count = lensh_ghost_sample_count;
+			subsystem->lens_ghost_step_scale = lensh_ghost_step_scale;
+			subsystem->halo_sample_length = halo_sample_length;
 		}
 	}
 }

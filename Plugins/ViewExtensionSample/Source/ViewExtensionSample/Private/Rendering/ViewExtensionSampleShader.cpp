@@ -18,3 +18,18 @@ IMPLEMENT_GLOBAL_SHADER(FAnisoKuwaharaCalcAnisoCS, "/ViewExtensionSampleShaders/
 IMPLEMENT_GLOBAL_SHADER(FAnisoKuwaharaFinalCS, "/ViewExtensionSampleShaders/Private/AnisoKuwahara.usf", "FinalPass_CS", SF_Compute );
 
 
+
+IMPLEMENT_GLOBAL_SHADER(FLensGhostExtractBrightCS, "/ViewExtensionSampleShaders/Private/LensGhost/extract_bright.usf", "MainCS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FLensGhostGenerateCS, "/ViewExtensionSampleShaders/Private/LensGhost/generate_ghost.usf", "MainCS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FLensGhostCompositeCS, "/ViewExtensionSampleShaders/Private/LensGhost/composite.usf", "MainCS", SF_Compute );
+
+
+
+
+
+
+
+
+
+
+

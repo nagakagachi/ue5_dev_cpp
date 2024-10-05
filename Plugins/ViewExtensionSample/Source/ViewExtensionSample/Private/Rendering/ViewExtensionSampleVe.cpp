@@ -31,7 +31,22 @@ void FViewExtensionSampleVe::BeginRenderViewFamily(FSceneViewFamily& InViewFamil
 {
 	// 特になし.
 }
-	
+
+template<typename CS_CLASS>
+FIntVector CalcComputeDispatchGroupSizeHelper(const TShaderMapRef<CS_CLASS>& cs, const FUintVector3 target_size)
+{
+	const uint32_t gsx = FMath::Max(1u, FMath::DivideAndRoundUp(target_size.X, CS_CLASS::THREADGROUPSIZE_X));
+	const uint32_t gsy = FMath::Max(1u, FMath::DivideAndRoundUp(target_size.Y, CS_CLASS::THREADGROUPSIZE_Y));
+	const uint32_t gsz = FMath::Max(1u, FMath::DivideAndRoundUp(target_size.Z, CS_CLASS::THREADGROUPSIZE_Z));
+	return FIntVector(gsx, gsy, gsz);
+}
+template<typename CS_CLASS>
+constexpr FIntVector CalcComputeDispatchGroupSizeHelper(const TShaderMapRef<CS_CLASS>& cs, const FUintVector2 target_size)
+{
+	return CalcComputeDispatchGroupSizeHelper(cs, FUintVector3(target_size.X, target_size.Y, 1));
+}
+
+
 /**
  * Called right after Base Pass rendering finished when using the deferred renderer.
  */
@@ -316,7 +331,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		AddAnisoKuwaharaPass(GraphBuilder, View, Inputs);
 	}
 
-	if(subsystem->enable_lensh_ghost)
+	if(subsystem->enable_lens_ghost)
 	{
 		AddLensGhostPass(GraphBuilder, View, Inputs);
 	}
@@ -440,7 +455,7 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 			EPixelFormat::PF_FloatRGBA,
 			{},
 			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
-		), TEXT("AnisoKuwaharaEigen"));
+		), TEXT("AnisoKuwaharaEigen0"));
 	
 	FRDGTextureRef tex_eigenvector_blurwork = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
@@ -448,7 +463,7 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 			tex_eigenvector->Desc.Format,
 			{},
 			tex_eigenvector->Desc.Flags
-		), TEXT("AnisoKuwaharaEigen"));
+		), TEXT("AnisoKuwaharaEigen1"));
 
 	FRDGTextureRef tex_aniso = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
@@ -573,37 +588,88 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 void FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
 {
 	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(View);
-	FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
+	FUintVector2 InputRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
+
 
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+
 	
-	FRDGTextureRef tex_work = GraphBuilder.CreateTexture(
+	FRDGTextureRef tex_bright_seed = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
 			FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
 			EPixelFormat::PF_FloatRGBA,
 			{},
 			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
-		), TEXT("AnisoKuwaharaEigen"));
+		), TEXT("LensGhostBright"));
+	
+	FRDGTextureRef tex_ghost = GraphBuilder.CreateTexture(
+		FRDGTextureDesc::Create2D(
+			FIntPoint(PrimaryViewRect.Width(), PrimaryViewRect.Height()),
+			EPixelFormat::PF_FloatRGBA,
+			{},
+			ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
+		), TEXT("LensGhostBright"));
 
-	/*
+	// Extract Bright.
 	{
-		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_work);
-		FAnisoKuwaharaEigenvectorCS::FParameters* Parameters = GraphBuilder.AllocParameters<FAnisoKuwaharaEigenvectorCS::FParameters>();
+		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_bright_seed);
+		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostExtractBrightCS::FParameters>();
 		{
-			Parameters->eigenvectorpass_SourceTexture = Inputs.SceneTextures->GetParameters()->SceneColorTexture;
-			Parameters->eigenvectorpass_SourceDimensions = WorkRect;
-			Parameters->eigenvectorpass_SourceSampler = PointClampSampler;
+			Parameters->SourceTexture = Inputs.SceneTextures->GetParameters()->SceneColorTexture;
+			Parameters->SourceDimensions = InputRect;
+			Parameters->SourceSampler = PointClampSampler;
 
-			Parameters->eigenvectorpass_OutputTexture = WorkUav;
-			Parameters->eigenvectorpass_OutputDimensions = WorkRect;
+			Parameters->extract_threshold = subsystem->lens_ghost_bright_threshold;
+			
+			Parameters->OutputTexture = WorkUav;
+			Parameters->OutputDimensions = InputRect;
+		}
+
+		TShaderMapRef<FLensGhostExtractBrightCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		const auto DispatchGroupSize = CalcComputeDispatchGroupSizeHelper(cs, InputRect);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("LensGhostExtractBright"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+	}
+	
+	// Generate Ghost.
+	{
+		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(tex_ghost);
+		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostGenerateCS::FParameters>();
+		{
+			Parameters->SourceTexture = tex_bright_seed;
+			Parameters->SourceDimensions = InputRect;
+			Parameters->SourceSampler = PointClampSampler;
+
+			Parameters->ghost_sample_count = subsystem->lens_ghost_sample_count;
+			Parameters->ghost_sample_step_scale = subsystem->lens_ghost_step_scale;
+
+			Parameters->halo_sample_length = subsystem->halo_sample_length;
+			
+			Parameters->OutputTexture = WorkUav;
+			Parameters->OutputDimensions = InputRect;
+		}
+
+		TShaderMapRef<FLensGhostGenerateCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		const auto DispatchGroupSize = CalcComputeDispatchGroupSizeHelper(cs, InputRect);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("LensGhostGenerate"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+	}
+	
+	// Composite.
+	{
+		FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(Inputs.SceneTextures->GetParameters()->SceneColorTexture);
+		auto* Parameters = GraphBuilder.AllocParameters<FLensGhostCompositeCS::FParameters>();
+		{
+			Parameters->SourceTexture = tex_ghost;
+			Parameters->SourceDimensions = InputRect;
+			Parameters->SourceSampler = PointClampSampler;
+			
+			Parameters->OutputTexture = WorkUav;
+			Parameters->OutputDimensions = InputRect;
 		}
 	
-		TShaderMapRef<FAnisoKuwaharaEigenvectorCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		TShaderMapRef<FLensGhostCompositeCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
-		FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
-				FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
-	
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("AnisoKuwaharaEigenvector"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		//FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		const auto DispatchGroupSize = CalcComputeDispatchGroupSizeHelper(cs, InputRect);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("LensGhostComposite"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 	}
-	*/
 }

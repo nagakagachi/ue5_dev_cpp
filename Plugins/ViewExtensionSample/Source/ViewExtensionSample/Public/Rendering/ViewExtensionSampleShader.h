@@ -110,6 +110,7 @@ class FTestFinalCS : public FGlobalShader
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
 	
 public:
 	DECLARE_GLOBAL_SHADER(FTestFinalCS);
@@ -139,11 +140,9 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
-		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
 
@@ -152,6 +151,7 @@ class FImageProcessTestCS : public FGlobalShader
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
 	
 public:
 	DECLARE_GLOBAL_SHADER(FImageProcessTestCS);
@@ -182,11 +182,9 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
-		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
 
@@ -197,6 +195,7 @@ class FAnisoKuwaharaEigenvectorCS : public FGlobalShader
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
 	
 public:
 	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaEigenvectorCS);
@@ -221,11 +220,9 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
-		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
 class FAnisoKuwaharaCalcAnisoCS : public FGlobalShader
@@ -233,6 +230,7 @@ class FAnisoKuwaharaCalcAnisoCS : public FGlobalShader
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
 	
 public:
 	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaCalcAnisoCS);
@@ -257,11 +255,9 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
-		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
 class FAnisoKuwaharaBlurCS : public FGlobalShader
@@ -269,6 +265,7 @@ class FAnisoKuwaharaBlurCS : public FGlobalShader
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
 	
 public:
 	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaBlurCS);
@@ -293,11 +290,9 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
-		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
 class FAnisoKuwaharaFinalCS : public FGlobalShader
@@ -305,6 +300,7 @@ class FAnisoKuwaharaFinalCS : public FGlobalShader
 public:
 	static constexpr uint32 THREADGROUPSIZE_X = 16;
 	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
 	
 public:
 	DECLARE_GLOBAL_SHADER(FAnisoKuwaharaFinalCS);
@@ -336,10 +332,124 @@ public:
 	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
-		
-		// Thread Group数マクロ指定.
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
-		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), 1);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
+	}
+};
+
+
+
+
+class FLensGhostExtractBrightCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FLensGhostExtractBrightCS);
+	SHADER_USE_PARAMETER_STRUCT(FLensGhostExtractBrightCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
+		SHADER_PARAMETER(FUintVector2, SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+	
+		SHADER_PARAMETER(float, extract_threshold)
+
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
+	}
+};
+class FLensGhostGenerateCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FLensGhostGenerateCS);
+	SHADER_USE_PARAMETER_STRUCT(FLensGhostGenerateCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
+		SHADER_PARAMETER(FUintVector2, SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+	
+		SHADER_PARAMETER(int, ghost_sample_count)
+		SHADER_PARAMETER(float, ghost_sample_step_scale)
+	
+		SHADER_PARAMETER(float, halo_sample_length)
+
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
+	}
+};
+class FLensGhostCompositeCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FLensGhostCompositeCS);
+	SHADER_USE_PARAMETER_STRUCT(FLensGhostCompositeCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SourceTexture)
+		SHADER_PARAMETER(FUintVector2, SourceDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, SourceSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
