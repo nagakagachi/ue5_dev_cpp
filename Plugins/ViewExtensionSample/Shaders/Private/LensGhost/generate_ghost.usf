@@ -58,7 +58,7 @@ void MainCS(
 	float4 halo_color = (float4)0;
 	if(0.01 < halo_sample_length)
 	{
-		const float2 sample_vec = normalize(ghost_sample_vec) * halo_sample_length;
+		const float2 sample_vec = any(0.0!=ghost_sample_vec)? normalize(ghost_sample_vec) * halo_sample_length : float3(0,0,0);
 		const float2 sample_uv = frac(mirrored_uv + sample_vec);
 		const float4 sample_color = SeedTexture.SampleLevel(SeedSampler, sample_uv*SeedValidRectScale, 0);
 		
