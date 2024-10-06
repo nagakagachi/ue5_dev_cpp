@@ -73,7 +73,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	}
 
 	FScreenPassTexture ScreenPassTex(SceneTextures->GetParameters()->GBufferATexture);
-	RDG_EVENT_SCOPE(GraphBuilder, "FViewExtensionSampleVe::PostRenderBasePassDeferred %dx%d", ScreenPassTex.ViewRect.Width(), ScreenPassTex.ViewRect.Height());
+	RDG_EVENT_SCOPE(GraphBuilder, "Naga_PostRenderBasePassDeferred %dx%d", ScreenPassTex.ViewRect.Width(), ScreenPassTex.ViewRect.Height());
 	
 	/*
 	GBUfferレイアウト -> DeferredShadingCommon.ush EncodeGBuffer()
@@ -227,7 +227,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		return;
 	}
 	
-	RDG_EVENT_SCOPE(GraphBuilder, "FViewExtensionSampleVe::PrePostProcessPass %dx%d", SceneColorTextureViewport.Rect.Width(), SceneColorTextureViewport.Rect.Height());
+	RDG_EVENT_SCOPE(GraphBuilder, "Naga_PrePostProcessPass %dx%d", SceneColorTextureViewport.Rect.Width(), SceneColorTextureViewport.Rect.Height());
 
 	// Getting material data for the current view.
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
@@ -465,6 +465,10 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 	FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
 
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+
+
+	RDG_EVENT_SCOPE(GraphBuilder, "Naga_AnisoKuwaharaPass %dx%d", PrimaryViewRect.Width(), PrimaryViewRect.Height());
+
 	
 	FRDGTextureRef tex_eigenvector = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
@@ -564,7 +568,7 @@ void FViewExtensionSampleVe::AddAnisoKuwaharaPass(FRDGBuilder& GraphBuilder, con
 			ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable|ETextureCreateFlags::UAV
 			);
 	}
-	// 現フレームから次フレームへ送り出すHistoryTexture.
+
 	FRDGTextureRef tex_scene_color_copy = GraphBuilder.CreateTexture(TexSceneColorCopyDesc, TEXT("NagaViewExtensionSceneColorCopy"));
 
 	// Copy.
@@ -606,13 +610,10 @@ FScreenPassTexture FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBu
 {
 	const FScreenPassTextureViewport InputViewport(SourceTexture);
 	const FScreenPassTextureViewport OutputViewport(SourceTexture);
-	
-	//const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(View);
-	//FUintVector2 InputRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
-
 
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 
+	RDG_EVENT_SCOPE(GraphBuilder, "Naga_LensGhostPass %dx%d", OutputViewport.Rect.Width(), OutputViewport.Rect.Height());
 	
 	FRDGTextureRef tex_bright_seed = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(
