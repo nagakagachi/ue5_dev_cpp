@@ -2,7 +2,6 @@
 
 #include "Subsystem/ViewExtensionSampleSubsystem.h"
 
-#include "K2Node_GetSubsystem.h"
 #include "Rendering/ViewExtensionSampleVe.h"
 
 AViewExtensionSampleControlActor::AViewExtensionSampleControlActor()

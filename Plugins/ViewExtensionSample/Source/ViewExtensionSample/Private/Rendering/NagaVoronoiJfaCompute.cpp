@@ -1,6 +1,8 @@
 
 #include "Rendering/NagaVoronoiJfaCompute.h"
 
+#include "RHIStaticStates.h"
+
 #include "GlobalShader.h"
 #include "DataDrivenShaderPlatformInfo.h"
 #include "MaterialShader.h"

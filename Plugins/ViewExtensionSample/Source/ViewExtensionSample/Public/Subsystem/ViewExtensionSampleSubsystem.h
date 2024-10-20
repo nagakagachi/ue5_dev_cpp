@@ -6,6 +6,7 @@
 #include "UObject/Object.h"
 #include "Subsystems/EngineSubsystem.h"
 #include "Engine/EngineBaseTypes.h"
+#include "GameFramework/Actor.h"
 
 
 
