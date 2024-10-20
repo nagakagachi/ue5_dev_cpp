@@ -1,5 +1,5 @@
 /*
-	AnisoKuwahara.usf
+	aniso_kuwahara.usf
 
 https://www.kyprianidis.com/p/pg2009/jkyprian-pg2009.pdf
 https://diglib.eg.org/server/api/core/bitstreams/3309663a-3134-44bc-9297-2fa33554277d/content
@@ -172,24 +172,7 @@ https://github.com/GarrettGunnell/Post-Processing
 
 		float4 aniso_data = finalpass_SourceTexture.Load(int3(pixel_point, 0));
 		float4 cur_color = finalpass_SceneTexture.Load(int3(pixel_point, 0));
-
-#if 0
-		const float eigenvector_len = length(aniso_data.xy);
-		const float2 eigenvector_dir = (0.0 < eigenvector_len)? aniso_data.xy/eigenvector_len : float2(0,0);
-
-		float4 accum_color = (float4)0;
-		for(int i = 0; i < 32; ++i)
-		{
-			const float4 n_color = finalpass_SceneTexture.Load(int3(pixel_point + eigenvector_dir * clamp(aniso_data.w, 0.1, 2.0) * i , 0));
-			const float w = 1.0 / (i+1);
-			accum_color.xyz += n_color.xyz * w;
-			accum_color.w += w;
-		}
-		accum_color.xyz /= accum_color.w;
 		
-		finalpass_OutputTexture[DTid.xy] = float4(accum_color.xyz, 0);
-		
-#else
 		const float cos_phi = cos(aniso_data.z);
 		const float sin_phi = sin(aniso_data.z);
 		const float2x2 R = float2x2(cos_phi, -sin_phi, sin_phi, cos_phi);
@@ -202,16 +185,8 @@ https://github.com/GarrettGunnell/Post-Processing
 		// 異方性方向キャンセルと異方性スケールキャンセルの行列.
 		float2x2 SR = mul(S, R);
 
-#if 1
 		const int sample_radius_x = k_kernel_radius;
 		const int sample_radius_y = k_kernel_radius;
-#else
-		const int aniso_sample_max_x = int(sqrt(scale_a * scale_a * cos_phi * cos_phi + scale_b * scale_b * sin_phi * sin_phi));
-		const int aniso_sample_max_y = int(sqrt(scale_a * scale_a * sin_phi * sin_phi + scale_b * scale_b * cos_phi * cos_phi));
-		
-		const int sample_radius_x = aniso_sample_max_x;
-		const int sample_radius_y = aniso_sample_max_y;
-#endif
 		
 		const float zeta = 2.0 / k_kernel_radius;
 		const float gamma = 3.0 * PI / (2.0 * k_aniso_kuwahara_section_count);
@@ -232,7 +207,6 @@ https://github.com/GarrettGunnell/Post-Processing
 				
 				float3 sample_color = finalpass_SceneTexture.Load(int3(pixel_point + sample_offset, 0)).xyz;
 
-				//--------------------
 				// https://github.com/GarrettGunnell/Post-Processing/blob/main/Assets/Kuwahara%20Filter/AnisotropicKuwahara.shader
 				float2 v = normalize_sample_offset;
 			
@@ -278,7 +252,6 @@ https://github.com/GarrettGunnell/Post-Processing
 	                m[k] += float4(sample_color * wk, wk);
 	                s[k] += sample_color * sample_color * wk;
 	            }
-				//--------------------
 			}
 		}
 		
@@ -298,9 +271,7 @@ https://github.com/GarrettGunnell/Post-Processing
 			output += float4(m[k].rgb * w, w);
 		}
 		output.xyz = (0.0 < output.w)? output.xyz/output.w : cur_color.xyz;
-		//output.xyz = (0.0 < output.w)? output.xyz/output.w : float3(0,0,0);
 		
 		finalpass_OutputTexture[DTid.xy] = float4(output.xyz, 0);
-#endif
 	}
 

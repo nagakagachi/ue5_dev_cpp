@@ -1,4 +1,4 @@
-// VoronoiCompute.usf
+// voronoi_jfa_compute.usf
 
 #include "/Engine/Private/Common.ush"
 

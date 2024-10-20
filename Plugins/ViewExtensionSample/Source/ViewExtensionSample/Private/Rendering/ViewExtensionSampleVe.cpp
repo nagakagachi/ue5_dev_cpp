@@ -124,7 +124,7 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
 	
 	// GBuffer操作.
-	if(subsystem->enable_shadingmodel_only_filter)
+	if(subsystem->enable_worldnormal_unlit)
 	{
 		// PostBasePassではSceneTexturesのGBuffer参照は空なのでRenderTargets側のGBufferを利用する.
 		FRDGTextureRef gb_tex_pbr_shadingmodel = RenderTargets[RT_GB_PbrShadingModel].GetTexture();
@@ -218,6 +218,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	}
 
 	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(View);
+	FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
 
 	FScreenPassTexture SceneColor((*Inputs.SceneTextures)->SceneColorTexture, PrimaryViewRect);
 	const FScreenPassTextureViewport SceneColorTextureViewport(SceneColor);
@@ -255,76 +256,17 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		// 前フレームのHistoryTexture.
 		if(HistoryTexture.IsValid())
 		{
+			// 前フレームから有効なテクスチャが抽出されている場合はRDGに登録して利用準備.
 			PrevHistoryTexture = GraphBuilder.RegisterExternalTexture(HistoryTexture);
 		}
 		else
 		{
 			// 初回フレームの場合は安全策.
 			PrevHistoryTexture = GraphBuilder.CreateTexture(WorkOutputDesc, TEXT("NagaViewExtensionHistoryTexture"));
-			//AddClearRenderTargetPass(GraphBuilder, prev_history_texture);
 			AddCopyTexturePass(GraphBuilder, SceneColor.Texture, PrevHistoryTexture);
 		}
 	}
 	
-	// ToonPass.
-	if(subsystem->enable_shadingmodel_only_filter)
-	{
-		// Reusing the same output description for our back buffer as SceneColor
-		FRDGTextureDesc WorkOutputDesc = {};;
-		{
-			const auto scene_color_desc = SceneColor.Texture->Desc;
-			
-			WorkOutputDesc = FRDGTextureDesc::Create2D(
-				scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
-				ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable
-				);
-		}
-		FRDGTexture* WorkTexture = GraphBuilder.CreateTexture(WorkOutputDesc, TEXT("NagaViewExtensionPrePostProcessWorkTexture"));
-		FScreenPassRenderTarget WorkTextureRenderTarget = FScreenPassRenderTarget(WorkTexture, SceneColor.ViewRect, ERenderTargetLoadAction::ENoAction);
-
-		// copy SceneColor->Work
-		{
-			FRHICopyTextureInfo copy_info{};
-			AddCopyTexturePass(GraphBuilder, input_scene_textures->SceneColorTexture, WorkTexture, copy_info);
-		}
-		
-		{
-			FScreenPassRenderTarget SceneColorRenderTarget(input_scene_textures->SceneColorTexture, ERenderTargetLoadAction::ELoad);
-			
-			FRHIBlendState* BlendState = TStaticBlendState<CW_RGB, BO_Add, BF_One, BF_Zero, BO_Add, BF_Zero, BF_One>::GetRHI();
-
-			TShaderMapRef<FPrePostProcessToonVs> VertexShader(GlobalShaderMap);
-			TShaderMapRef<FPrePostProcessToonPs> PixelShader(GlobalShaderMap);
-
-			FPrePostProcessToonPs::FParameters* Parameters = GraphBuilder.AllocParameters<FPrePostProcessToonPs::FParameters>();
-			{
-				Parameters->pass1_list_shadow_threshold = 0.499;
-
-				Parameters->pass1_sampler_screen = PointClampSampler;
-				
-				Parameters->pass1_tex_scene_color = WorkTexture;
-				Parameters->pass1_tex_gbuffer_a = input_scene_textures->GBufferATexture;
-				Parameters->pass1_tex_gbuffer_b_custom = FrameExtendGBuffer;// PostBasePassで生成したRDGTextureを使用することをRDGに指示.
-				Parameters->pass1_tex_gbuffer_c = input_scene_textures->GBufferCTexture;
-				Parameters->pass1_tex_dimensions = FUintVector2(PrimaryViewRect.Width(), PrimaryViewRect.Height());
-
-				Parameters->RenderTargets[0] = SceneColorRenderTarget.GetRenderTargetBinding();
-			}
-			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
-			AddDrawScreenPass(
-				GraphBuilder,
-				RDG_EVENT_NAME("Naga_PrePostProcessToon"),
-				View,
-				RegionViewport,
-				RegionViewport,
-				VertexShader,
-				PixelShader,
-				BlendState,
-				Parameters
-			);
-		}
-	}
-
 
 	// Aniso Kuwahara.
 	if(subsystem->enable_aniso_kuwahara)
@@ -334,8 +276,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	
 	if(subsystem->enable_voronoi_test)
 	{
-		FUintVector2 WorkRect(PrimaryViewRect.Width(), PrimaryViewRect.Height());
-		
 		// Voronoi用Seedバッファ.
 		FRDGTexture* VoronoiCellTexture{};
 		FRDGTextureDesc VoronoiWorkUavTexDesc = {};;
@@ -376,7 +316,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
 					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
 		
-			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaGenerateEdge"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 		}
 
 		// Generate Voronoi.
@@ -407,8 +347,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->pass0_SourceSampler = PointClampSampler;
 				Parameters->pass0_SourceDimensions = WorkRect;
 
-				Parameters->pass0_HistoryTexture = PrevHistoryTexture;
-
 				Parameters->pass0_OutputTexture = SceneColorUav;
 				Parameters->pass0_SourceDimensions = WorkRect;
 				
@@ -420,10 +358,49 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
 					FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
 		
-			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaTestCompute"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaVoronoiTest"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 		}
 	}
 
+	// History Test.
+	if(subsystem->enable_history_test)
+	{
+		// SceneColor をコピーするための Work Textureを作成.
+		FRDGTextureDesc WorkSceneColorDesc = {};;
+		{
+			const auto scene_color_desc = SceneColor.Texture->Desc;
+			WorkSceneColorDesc = FRDGTextureDesc::Create2D(
+				scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
+				ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable
+				);
+		}
+		FRDGTexture* WorkSceneColorTexture = GraphBuilder.CreateTexture(WorkSceneColorDesc, TEXT("NagaHistoryWorkTexture"));
+		// SceneColorを Workへコピー.
+		{
+			FRHICopyTextureInfo copy_info{};
+			AddCopyTexturePass(GraphBuilder, SceneColor.Texture, WorkSceneColorTexture, copy_info);
+		}
+
+		FRDGTextureUAVRef SceneColorUav = GraphBuilder.CreateUAV(SceneColor.Texture);
+		FHistoryTestCS::FParameters* Parameters = GraphBuilder.AllocParameters<FHistoryTestCS::FParameters>();
+		{
+			Parameters->SourceTexture = WorkSceneColorTexture;
+			Parameters->SourceSampler = PointClampSampler;
+			Parameters->SourceDimensions = WorkRect;
+
+			Parameters->HistoryTexture = PrevHistoryTexture;
+
+			Parameters->OutputTexture = SceneColorUav;
+			Parameters->SourceDimensions = WorkRect;
+		}
+		
+		TShaderMapRef<FHistoryTestCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+		FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(WorkRect.X, cs->THREADGROUPSIZE_X),
+				FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaHistoryTest"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+	}
 	
 	// Historyテスト.
 	if(subsystem->enable_history_test)

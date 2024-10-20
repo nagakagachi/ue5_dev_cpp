@@ -29,16 +29,16 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="HistoryTest")
 	bool enable_history_test = false;
 	
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ViewExtensionSample")
-	bool enable_shadingmodel_only_filter = false;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="WorldNormalUnlitTest")
+	bool enable_worldnormal_unlit = false;
 
 
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
-	bool enable_voronoi_test = true;
+	bool enable_voronoi_test = false;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
 	float depth_edge_coef = 0.02f;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
@@ -96,7 +96,7 @@ public:
 
 	bool enable_history_test = false;
 	
-	bool enable_shadingmodel_only_filter = false;
+	bool enable_worldnormal_unlit = false;
 
 	bool enable_aniso_kuwahara = false;
 	float aniso_kuwahara_aniso_control = 1.0f;
