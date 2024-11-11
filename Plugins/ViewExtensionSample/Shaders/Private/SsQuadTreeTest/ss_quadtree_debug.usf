@@ -1,0 +1,39 @@
+// ss_quadtree_prepare.usf
+
+#include "/Engine/Private/Common.ush"
+
+
+Texture2D InputTexture;
+uint2 InputDimensions;
+SamplerState InputSampler;
+
+struct VsOutput
+{
+	//float4 OutPosition : SV_POSITION;// この位置だとPSO生成時に失敗
+	float4 UVAndScreenPos : TEXCOORD0;
+	float4 OutPosition : SV_POSITION;// メンバの順序をVS側の送出の順序をあわせないとPSO生成時にエラーになる
+};
+
+struct PsOut
+{
+	float4 color : SV_TARGET0;
+};
+
+PsOut MainPS(VsOutput input)
+{
+	PsOut output = (PsOut)0;
+
+	const float4 input_color = InputTexture.SampleLevel(InputSampler, input.UVAndScreenPos.xy, 0);
+
+	const float variance = max(0.0, input_color.y - (input_color.x * input_color.x));
+	
+	//output.color = float4(variance,variance,variance,variance);
+
+	output.color = float4(input_color.xyz, 1.0);
+
+	
+	return output;
+}
+
+
+

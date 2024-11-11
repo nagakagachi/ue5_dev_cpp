@@ -1,0 +1,155 @@
+// ss_quadtree_prepare.usf
+
+#include "/Engine/Private/Common.ush"
+
+
+Texture2D InputTexture;
+uint2 InputDimensions;
+SamplerState InputSampler;
+
+RWTexture2D<float4> OutputTexture;
+uint2 OutputDimensions;
+
+uint StepIndex;
+
+
+// GroupThreadは縦横半分のサイズでDispatchされる.
+
+groupshared float4 lds_avg_mips[THREADGROUPSIZE_Y][THREADGROUPSIZE_X * 2];
+groupshared float4 lds_sqavg_mips[THREADGROUPSIZE_Y][THREADGROUPSIZE_X * 2];
+
+[numthreads(THREADGROUPSIZE_X,THREADGROUPSIZE_Y,THREADGROUPSIZE_Z)]
+void MainCS(
+	uint3 Gid	: SV_GroupID,
+	uint3 DTid	: SV_DispatchThreadID,
+	uint3 GTid	: SV_GroupThreadID,
+	uint Gi		: SV_GroupIndex
+	)
+{
+	const uint2 tile_read_lt_pos = Gid.xy * (uint2(THREADGROUPSIZE_X, THREADGROUPSIZE_Y) * 2);
+	const uint2 thread_read_2x2_lt_pos = tile_read_lt_pos + GTid.xy*2;
+	const uint2 lds_pos = GTid.xy;
+
+	const uint2 sqavg_offset = uint2(0, OutputDimensions.y / 2);
+	
+	// LDSクリア
+	{
+		// LDSは横方向に2倍サイズなので1Threadが1要素クリア.
+		lds_avg_mips[lds_pos.y][lds_pos.x*2] = float4(0, 0, 0, 0);
+		lds_avg_mips[lds_pos.y][lds_pos.x*2 + 1] = float4(0, 0, 0, 0);
+		
+		lds_sqavg_mips[lds_pos.y][lds_pos.x*2] = float4(0, 0, 0, 0);
+		lds_sqavg_mips[lds_pos.y][lds_pos.x*2 + 1] = float4(0, 0, 0, 0);
+	}
+	
+	// 初期読み込み.
+	const float4 input_00 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(0, 0), 0));
+	const float4 input_10 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(1, 0), 0));
+	const float4 input_01 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(0, 1), 0));
+	const float4 input_11 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(1, 1), 0));
+
+	{
+		// 平均.
+		const float4 avg = (input_00 + input_10 + input_01 + input_11) / 4.0;
+		lds_avg_mips[lds_pos.y][lds_pos.x] = avg;
+
+		// 二乗の平均.
+		const float4 sqavg = (input_00*input_00 + input_10*input_10 + input_01*input_01 + input_11*input_11) / 4.0;
+		lds_sqavg_mips[lds_pos.y][lds_pos.x] = sqavg;
+	}
+
+	
+	// UAVにMip0 (1/2) の書き込み.
+	{
+		const uint2 write_thread_pos = Gid.xy * uint2(THREADGROUPSIZE_X, THREADGROUPSIZE_Y) + lds_pos;
+		// avg.
+		{
+			const uint2 write_thread_pos_avg = write_thread_pos;
+			if(all(write_thread_pos_avg < OutputDimensions))
+			{
+				OutputTexture[write_thread_pos_avg] = lds_avg_mips[lds_pos.y][lds_pos.x];
+			}
+		}
+		// sqavg.
+		{
+			const uint2 write_thread_pos_sqavg = write_thread_pos + sqavg_offset;
+			if(all(write_thread_pos_sqavg < OutputDimensions))
+			{
+				OutputTexture[write_thread_pos_sqavg] = lds_sqavg_mips[lds_pos.y][lds_pos.x];
+			}
+		}
+	}
+	
+	GroupMemoryBarrierWithGroupSync();
+	
+	// LDS上で可能なだけMip計算
+	// タイルは正方形 (THREADGROUPSIZE_X == THREADGROUPSIZE_Y) 想定.
+	uint step_index = 0;
+	for(uint downsample_region = THREADGROUPSIZE_X; downsample_region > 1; downsample_region = downsample_region>>1, ++step_index)
+	{
+		// 等比級数和で直接Mipのオフセットを計算.
+		const float mip_offset_mul_prev = (pow(0.5, step_index) - 1)/(0.5 - 1);
+		const float mip_offset_mul_next = (pow(0.5, step_index+1) - 1)/(0.5 - 1);
+		// LDS上のMipのオフセット位置.
+		const uint2 pre_lds_offset = uint2(THREADGROUPSIZE_X * mip_offset_mul_prev, 0);
+		const uint2 cur_lds_offset = uint2(THREADGROUPSIZE_X * mip_offset_mul_next, 0);
+		
+		const uint pre_lds_region = downsample_region;
+		const uint cur_lds_region = downsample_region >> 1;
+
+		if(all(lds_pos < cur_lds_region))
+		{
+			const uint2 write_pos = lds_pos + cur_lds_offset;
+			
+			const uint2 read_lt_pos = min(lds_pos*2, pre_lds_region - 1) + pre_lds_offset;
+			
+			const float4 avg =
+				(lds_avg_mips[read_lt_pos.y][read_lt_pos.x]
+					+ lds_avg_mips[read_lt_pos.y][read_lt_pos.x+1]
+					+ lds_avg_mips[read_lt_pos.y+1][read_lt_pos.x]
+					+ lds_avg_mips[read_lt_pos.y+1][read_lt_pos.x+1]) /4.0;
+			lds_avg_mips[write_pos.y][write_pos.x] = avg;
+			
+			const float4 sqavg =
+				(lds_sqavg_mips[read_lt_pos.y][read_lt_pos.x]
+					+ lds_sqavg_mips[read_lt_pos.y][read_lt_pos.x+1]
+					+ lds_sqavg_mips[read_lt_pos.y+1][read_lt_pos.x]
+					+ lds_sqavg_mips[read_lt_pos.y+1][read_lt_pos.x+1]) /4.0;
+			lds_sqavg_mips[write_pos.y][write_pos.x] = sqavg;
+
+			
+			// UAVのこの段階のMip書き込み.
+			{
+				const uint2 write_uav_mip_offset = uint2((OutputDimensions.x/2) * mip_offset_mul_next, 0);
+			
+				const uint2 write_thread_pos = write_uav_mip_offset + Gid.xy * (uint2(THREADGROUPSIZE_X, THREADGROUPSIZE_Y) >> (step_index+1)) + lds_pos;
+
+				// avg.
+				{
+					const uint2 write_thread_pos_avg = write_thread_pos;
+					if(all(write_thread_pos_avg < OutputDimensions))
+					{
+						OutputTexture[write_thread_pos_avg] = lds_avg_mips[write_pos.y][write_pos.x];
+					}
+				}
+				// sqavg.
+				{
+					const uint2 write_thread_pos_avg = write_thread_pos + sqavg_offset;
+					if(all(write_thread_pos_avg < OutputDimensions))
+					{
+						OutputTexture[write_thread_pos_avg] = lds_sqavg_mips[write_pos.y][write_pos.x];
+					}
+				}
+			}
+		}
+		// GroupThreadバリア
+		GroupMemoryBarrierWithGroupSync();
+	}
+	
+	
+}
+
+
+
+
+

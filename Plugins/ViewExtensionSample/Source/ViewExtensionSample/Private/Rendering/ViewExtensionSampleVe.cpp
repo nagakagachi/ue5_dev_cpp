@@ -233,16 +233,18 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+	FRHISamplerState* LinearClampSampler = TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 	const auto& input_scene_textures = Inputs.SceneTextures->GetParameters();
 
 
+	const auto scene_color_desc = SceneColor.Texture->Desc;
+	
 	// History Texture.
 	FRDGTextureRef NewHistoryTexture{};
 	FRDGTextureRef PrevHistoryTexture{};
 	{
 		FRDGTextureDesc WorkOutputDesc = {};;
 		{
-			const auto scene_color_desc = SceneColor.Texture->Desc;
 			
 			WorkOutputDesc = FRDGTextureDesc::Create2D(
 				scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
@@ -265,7 +267,74 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			AddCopyTexturePass(GraphBuilder, SceneColor.Texture, PrevHistoryTexture);
 		}
 	}
-	
+
+	{
+		FRDGTextureRef TexQuadTreePrepare = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(scene_color_desc.Extent, PF_FloatRGBA, scene_color_desc.ClearValue, ETextureCreateFlags::ShaderResource|ETextureCreateFlags::UAV),
+			TEXT("QuadTreePrepare")
+			);
+
+
+		// TODO.
+		// テスト用のクリア. 全域をデバッグ用にスクリーンコピーする場合にNaNなどが入ると壊れるため, 検証用のクリアで本来はいらないはず.
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(TexQuadTreePrepare), 0.0f);
+		
+		{
+			FSsQuadTreePrepareCS::FParameters* Parameters = GraphBuilder.AllocParameters<FSsQuadTreePrepareCS::FParameters>();
+			{
+				Parameters->InputTexture = SceneColor.Texture;
+				Parameters->InputSampler = LinearClampSampler;
+				Parameters->InputDimensions = WorkRect;
+
+				Parameters->OutputTexture = GraphBuilder.CreateUAV(TexQuadTreePrepare);
+				Parameters->OutputDimensions = WorkRect;
+				
+				Parameters->StepIndex = 0;
+			}
+		
+			TShaderMapRef<FSsQuadTreePrepareCS> cs(GlobalShaderMap);
+			
+			// operator/(IntType Divisor) -> 10 / 2 = 5
+			const FUintVector2 half_rect = WorkRect / 2;// * 0.5 だとtemplateで intに強制変換されて結果0乗算になる模様.
+			
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(half_rect.X, cs->THREADGROUPSIZE_X),
+					FMath::DivideAndRoundUp(half_rect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("QuadTreePrepare"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+
+		{
+			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
+			
+			FSsQuadTreeDebugPS::FParameters* Parameters = GraphBuilder.AllocParameters<FSsQuadTreeDebugPS::FParameters>();
+			{
+				Parameters->InputTexture = TexQuadTreePrepare;
+				Parameters->InputSampler = LinearClampSampler;
+				Parameters->InputDimensions = WorkRect;
+				
+				Parameters->RenderTargets[0] = FRenderTargetBinding{ SceneColor.Texture, ERenderTargetLoadAction::ENoAction };
+			}
+			
+			TShaderMapRef<FScreenPassVS> vs(GlobalShaderMap);
+			TShaderMapRef<FSsQuadTreeDebugPS> ps(GlobalShaderMap);
+
+			FRHIBlendState* BlendState =
+				TStaticBlendState<
+					CW_RGBA, BO_Add, BF_One, BF_Zero, BO_Add, BF_One, BF_Zero
+				>::GetRHI();
+			
+			AddDrawScreenPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("QuadTreeDebug"), 
+				View,
+				RegionViewport,
+				RegionViewport,
+				vs,
+				ps,
+				BlendState,
+				Parameters);
+		}
+	}
 
 	// Aniso Kuwahara.
 	if(subsystem->enable_aniso_kuwahara)
@@ -282,7 +351,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			{
 				// Voronoi Diagram計算のピクセル座標格納のため, 1024以上の精度を要求. 16bit float推奨.
 				const EPixelFormat work_format = PF_FloatRGBA;//16bit float.
-				const auto scene_color_desc = SceneColor.Texture->Desc;
 				// R16B16_Floatが望ましいがUEで選択できないため R32G32B32_Float 等としている. Shader側RWTextureの型と合わせることに注意.
 				VoronoiWorkUavTexDesc = FRDGTextureDesc::Create2D(
 					scene_color_desc.Extent, work_format, scene_color_desc.ClearValue,
@@ -325,7 +393,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			// SceneColor をコピーするための Work Textureを作成.
 			FRDGTextureDesc WorkSceneColorDesc = {};;
 			{
-				const auto scene_color_desc = SceneColor.Texture->Desc;
 				WorkSceneColorDesc = FRDGTextureDesc::Create2D(
 					scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
 					ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable
@@ -367,7 +434,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		// SceneColor をコピーするための Work Textureを作成.
 		FRDGTextureDesc WorkSceneColorDesc = {};;
 		{
-			const auto scene_color_desc = SceneColor.Texture->Desc;
 			WorkSceneColorDesc = FRDGTextureDesc::Create2D(
 				scene_color_desc.Extent, scene_color_desc.Format, scene_color_desc.ClearValue,
 				ETextureCreateFlags::ShaderResource|ETextureCreateFlags::RenderTargetable
