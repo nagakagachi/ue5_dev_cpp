@@ -288,8 +288,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 
 				Parameters->OutputTexture = GraphBuilder.CreateUAV(TexQuadTreePrepare);
 				Parameters->OutputDimensions = WorkRect;
-				
-				Parameters->StepIndex = 0;
 			}
 		
 			TShaderMapRef<FSsQuadTreePrepareCS> cs(GlobalShaderMap);
