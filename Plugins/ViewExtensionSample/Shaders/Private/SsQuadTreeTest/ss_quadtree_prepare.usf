@@ -46,6 +46,11 @@ int MostSignificantBit32(uint v)
 	return BitCount32(v) - 1;
 }
 
+// 横方向レイアウトMipのオフセットを等比級数和で直接計算.
+uint CalcMipOffsetX(uint resolution, uint mip_level)
+{
+	return uint(resolution * ((1.0 / float(1 << mip_level)) - 1.0)/(0.5 - 1.0));
+}
 
 [numthreads(THREADGROUPSIZE,THREADGROUPSIZE,1)]
 void FirstCS(
@@ -99,13 +104,9 @@ void FirstCS(
 	{
 		const uint tile_mip_size = 1 << (k_tile_max_mip_count-1 - mip_i);
 		const uint pre_tile_mip_size = tile_mip_size << 1; // *2
+		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
+		const uint2 pre_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i-1), 0);
 		
-		// 等比級数和で直接Mipのオフセットを計算.
-		const float mip_pow_div = pow(0.5, mip_i);
-		// LDS上のMipのオフセット位置. (横方向にMipレイアウト.
-		const uint2 cur_lds_offset = uint2(THREADGROUPSIZE * (mip_pow_div - 1.0)/(0.5 - 1.0), 0);
-		const uint2 pre_lds_offset = uint2(THREADGROUPSIZE * ((mip_pow_div*2.0) - 1.0)/(0.5 - 1.0), 0);
-
 		// 前のMipの他のThread書き込み待ち.
 		GroupMemoryBarrierWithGroupSync();
 		
@@ -130,12 +131,8 @@ void FirstCS(
 	for(uint mip_i = 0; mip_i < k_tile_max_mip_count; ++mip_i)
 	{
 		const uint tile_mip_size = 1 << (k_tile_max_mip_count-1 - mip_i);
-		
 		const uint2 mip_size = max(1, reso_half >> mip_i);
-		// 等比級数和で直接Mipのオフセットを計算.
-		const float mip_pow_div = pow(0.5, mip_i);
-		const float mip_offset_mul_next = ((mip_pow_div) - 1)/(0.5 - 1.0);
-
+		
 		// UAVのこの段階のMip書き込み.
 		const uint2 px_pos_in_mip = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) >> (mip_i)) + lds_pos;
 
@@ -144,12 +141,12 @@ void FirstCS(
 			continue;
 		
 		// UAVの対象Mipの横方向オフセット.
-		const uint2 write_uav_mip_offset = uint2(reso_half.x * mip_offset_mul_next, 0);
+		const uint2 write_uav_mip_offset = uint2(CalcMipOffsetX(reso_half.x, mip_i), 0);
 		// UAVの書き込み先.
 		const uint2 write_thread_pos = write_uav_mip_offset + px_pos_in_mip;
 		
 		// LDS上のMipのオフセット位置. (横方向にMipレイアウト.
-		const uint2 cur_lds_offset = uint2(THREADGROUPSIZE * mip_offset_mul_next, 0);
+		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
 		const uint2 px_pos_in_tile = lds_pos + cur_lds_offset;
 		// avg. 上段.
 		{
