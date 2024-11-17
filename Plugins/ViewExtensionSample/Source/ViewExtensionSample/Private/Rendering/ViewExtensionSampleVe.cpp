@@ -283,7 +283,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FSsQuadTreePrepareCS::FParameters* Parameters = GraphBuilder.AllocParameters<FSsQuadTreePrepareCS::FParameters>();
 			{
 				Parameters->InputTexture = SceneColor.Texture;
-				Parameters->InputSampler = LinearClampSampler;
 				Parameters->InputDimensions = WorkRect;
 
 				Parameters->OutputTexture = GraphBuilder.CreateUAV(TexQuadTreePrepare);
@@ -295,8 +294,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			// operator/(IntType Divisor) -> 10 / 2 = 5
 			const FUintVector2 half_rect = WorkRect / 2;// * 0.5 だとtemplateで intに強制変換されて結果0乗算になる模様.
 			
-			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(half_rect.X, cs->THREADGROUPSIZE_X),
-					FMath::DivideAndRoundUp(half_rect.Y, cs->THREADGROUPSIZE_Y), 1);
+			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(half_rect.X, cs->THREADGROUPSIZE),
+					FMath::DivideAndRoundUp(half_rect.Y, cs->THREADGROUPSIZE), 1);
 		
 			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("QuadTreePrepare"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 		}

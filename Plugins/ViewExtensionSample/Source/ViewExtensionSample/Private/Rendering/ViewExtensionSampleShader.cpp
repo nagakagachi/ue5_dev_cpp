@@ -23,7 +23,7 @@ IMPLEMENT_GLOBAL_SHADER(FLensGhostCompositeCS, "/ViewExtensionSampleShaders/Priv
 IMPLEMENT_GLOBAL_SHADER(FHistoryTestCS, "/ViewExtensionSampleShaders/Private/history_test.usf", "MainCS", SF_Compute );
 
 
-IMPLEMENT_GLOBAL_SHADER(FSsQuadTreePrepareCS, "/ViewExtensionSampleShaders/Private/SsQuadTreeTest/ss_quadtree_prepare.usf", "MainCS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FSsQuadTreePrepareCS, "/ViewExtensionSampleShaders/Private/SsQuadTreeTest/ss_quadtree_prepare.usf", "FirstCS", SF_Compute );
 IMPLEMENT_GLOBAL_SHADER(FSsQuadTreeDebugPS, "/ViewExtensionSampleShaders/Private/SsQuadTreeTest/ss_quadtree_debug.usf", "MainPS", SF_Pixel );
 
 
