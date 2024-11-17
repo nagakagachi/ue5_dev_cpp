@@ -19,11 +19,12 @@ uint2 OutputDimensions;
 // GroupThreadはターゲット解像度の縦横半分のサイズに対してDispatchされる.
 //
 
-// 固定. 最終的に 32x32 threadで　64x64pxタイルを処理する. 64->1, sync, 64->1 で 64*64=4096px を 1px までシングルパスで縮小.
-#define THREADGROUPSIZE 16
+// 固定. 1/THREADGROUPSIZE までのMip生成をするPass.
+// 初回のみ入力テクスチャ読み取りのためFirstCS, それ以降は必要な回数だけ SecondCS を実行することで完全なMipChainを一つのテクスチャ上に横にレイアウト生成する.
+// 平均と二乗平均を同時計算するためにSharedMemoryサイズ制限でスレッド数も制限される.
+#define THREADGROUPSIZE 32
 
-groupshared float4 lds_mips0[THREADGROUPSIZE][THREADGROUPSIZE * 2];
-groupshared float4 lds_mips1[THREADGROUPSIZE][THREADGROUPSIZE * 2];
+groupshared float4 lds_mips[THREADGROUPSIZE][THREADGROUPSIZE * 2];
 
 // Bit Count. 0b0100 -> 1.
 int BitCount32(uint v)
@@ -52,6 +53,75 @@ uint CalcMipOffsetX(uint resolution, uint mip_level)
 	return uint(resolution * ((1.0 / float(1 << mip_level)) - 1.0)/(0.5 - 1.0));
 }
 
+// LDSにセットアップした処理対象範囲の最小Mipを元にLOD上でTile上限Mipを生成し, UAVに書き出す.
+// ... 32 16 8 4 2 1 ...
+void GenerateLdsMipAndWriteUavCore(
+	uint2 max_mip_resolution,
+	uint2 write_uav_offset,
+	uint start_mip_index,
+	uint work_mip_count,
+	uint2 tile_index,
+	uint2 pos_in_tile
+)
+{
+	// Group毎のLDS上で可能な範囲でMip計算.
+	// LOS作業は最上段の一つ下から開始なので 1 開始.
+	for(uint mip_i = 1; mip_i < work_mip_count; ++mip_i)
+	{
+		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
+		const uint pre_tile_mip_size = tile_mip_size << 1; // *2
+		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
+		const uint2 pre_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i-1), 0);
+		
+		// 前のMipの他のThread書き込み待ち.
+		GroupMemoryBarrierWithGroupSync();
+		
+		// LDS内のMip範囲のみ処理.
+		if(any(pos_in_tile >= tile_mip_size))
+			continue;
+
+		const uint2 src_lt = min(pos_in_tile*2, pre_tile_mip_size - 1) + pre_lds_offset;
+		const uint2 dst_pos = pos_in_tile + cur_lds_offset;
+
+		// avg. 上段.
+		lds_mips[dst_pos.y][dst_pos.x] =
+			(lds_mips[src_lt.y][src_lt.x] + lds_mips[src_lt.y][src_lt.x+1] + lds_mips[src_lt.y+1][src_lt.x] + lds_mips[src_lt.y+1][src_lt.x+1]) * 0.25;
+	}
+	
+	// LDS上に構築した分のMipをバッチ的にUAV書き込み.
+	// こちらは読み取りも書き込み先も重複しないためバリアなし.
+	for(uint mip_i = 0; mip_i < work_mip_count; ++mip_i)
+	{
+		const uint uav_mip_index = start_mip_index + mip_i;
+		
+		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
+		const uint2 uav_mip_size = max(1, max_mip_resolution >> uav_mip_index);
+		
+		// UAVのこの段階のMip書き込み.
+		const uint2 px_pos_in_mip = tile_index * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) >> (mip_i)) + pos_in_tile;
+
+		// 書き込み先が現在のMip範囲内のみ処理, LDS内のMip範囲のみ処理.
+		if(any(px_pos_in_mip >= uav_mip_size) || any(pos_in_tile >= tile_mip_size))
+			continue;
+		
+		// UAVの対象Mipの横方向オフセット.
+		const uint2 write_uav_mip_offset = uint2(CalcMipOffsetX(max_mip_resolution.x, uav_mip_index), 0);
+		// UAVの書き込み先.
+		const uint2 write_thread_pos = write_uav_mip_offset + px_pos_in_mip;
+		
+		// LDS上のMipのオフセット位置. (横方向にMipレイアウト.
+		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
+		const uint2 px_pos_in_tile = pos_in_tile + cur_lds_offset;
+		
+		// avg. 上段.
+		{
+			const uint2 write_thread_pos_avg = write_thread_pos + write_uav_offset;
+			OutputTexture[write_thread_pos_avg] = lds_mips[px_pos_in_tile.y][px_pos_in_tile.x];
+		}
+	}
+}
+
+
 [numthreads(THREADGROUPSIZE,THREADGROUPSIZE,1)]
 void FirstCS(
 	uint3 Gid	: SV_GroupID,
@@ -63,104 +133,175 @@ void FirstCS(
 	// ThreadGroup Tileのサイズ.
 	const int k_tile_max_mip_count = MostSignificantBit32(THREADGROUPSIZE) + 1;
 	const uint2 reso_half = OutputDimensions/2;
-	const uint2 sqavg_offset = uint2(0, reso_half.y);// 下段半分で別のMipを作る場合のオフセット.
 
-	const uint2 tile_read_lt_pos = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) * 2);
-	const uint2 thread_read_2x2_lt_pos = tile_read_lt_pos + GTid.xy*2;
+	const uint start_mip_index = 0;// FirstPassは0から.
+	const uint2 setup_read_offset = uint2(0, 0);// 入力テクスチャ全域を読み取るので 0,0 起点.
+
+	const uint max_mip_size = max(max(reso_half.x, reso_half.y) >> start_mip_index, 1);
+	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
+	const uint work_mip_count = min(k_tile_max_mip_count, max_mip_count);
+	if(0 >= work_mip_count)
+		return;
+
 	const uint2 lds_pos = GTid.xy;
 	
-	// LDSクリア
+	// LDSのMip1以降の領域をクリア.
 	{
 		// LDSは横方向に2倍サイズなので1Threadが1要素クリア.
-		lds_mips0[lds_pos.y][lds_pos.x*2] = float4(0, 0, 0, 0);
-		lds_mips0[lds_pos.y][lds_pos.x*2 + 1] = float4(0, 0, 0, 0);
-		
-		lds_mips1[lds_pos.y][lds_pos.x*2] = float4(0, 0, 0, 0);
-		lds_mips1[lds_pos.y][lds_pos.x*2 + 1] = float4(0, 0, 0, 0);
+		lds_mips[lds_pos.y][lds_pos.x*2] = float4(0, 0, 0, 0);
+		lds_mips[lds_pos.y][lds_pos.x*2 + 1] = float4(0, 0, 0, 0);
 	}
 	
-	// LDSでの一括計算とUAV書き込みバッチ化.
-	//	バッチは log2(numthreads)+1 のMip分. numthreads=16 なら 5. (16,8,4,2,1
+	const uint2 tile_read_lt_pos = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) * 2);
+	const uint2 thread_read_2x2_lt_pos = setup_read_offset + tile_read_lt_pos + GTid.xy*2;
 
-	// LDSのMip0セットアップ.
+	// 平均.
 	{
-		// UAV読み取り
-		const float4 input_00 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(0, 0), 0));
-		const float4 input_10 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(1, 0), 0));
-		const float4 input_01 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(0, 1), 0));
-		const float4 input_11 = InputTexture.Load(int3(thread_read_2x2_lt_pos + uint2(1, 1), 0));
-
-		// LDS書き込み
-		// 平均.
-		lds_mips0[lds_pos.y][lds_pos.x] = (input_00 + input_10 + input_01 + input_11) * 0.25;
-
-		// 二乗の平均.
-		lds_mips1[lds_pos.y][lds_pos.x] = (input_00*input_00 + input_10*input_10 + input_01*input_01 + input_11*input_11) * 0.25;
-	}
-	
-	// Group毎のLDS上で可能な範囲でMip計算.
-	// LOS作業は最上段の一つ下から開始なので 1 開始.
-	for(uint mip_i = 1; mip_i < k_tile_max_mip_count; ++mip_i)
-	{
-		const uint tile_mip_size = 1 << (k_tile_max_mip_count-1 - mip_i);
-		const uint pre_tile_mip_size = tile_mip_size << 1; // *2
-		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
-		const uint2 pre_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i-1), 0);
+		const uint2 read_uav_offset = uint2(0, 0);
+		const uint2 write_uav_offset = uint2(0, 0);
 		
-		// 前のMipの他のThread書き込み待ち.
-		GroupMemoryBarrierWithGroupSync();
-		
-		// LDS内のMip範囲のみ処理.
-		if(any(lds_pos >= tile_mip_size))
-			continue;
-
-		const uint2 src_lt = min(lds_pos*2, pre_tile_mip_size - 1) + pre_lds_offset;
-		const uint2 dst_pos = lds_pos + cur_lds_offset;
-
-		// avg. 上段.
-		lds_mips0[dst_pos.y][dst_pos.x] =
-			(lds_mips0[src_lt.y][src_lt.x] + lds_mips0[src_lt.y][src_lt.x+1] + lds_mips0[src_lt.y+1][src_lt.x] + lds_mips0[src_lt.y+1][src_lt.x+1]) /4.0;
-
-		// sqavg. 下段.
-		lds_mips1[dst_pos.y][dst_pos.x] =
-			(lds_mips1[src_lt.y][src_lt.x] + lds_mips1[src_lt.y][src_lt.x+1] + lds_mips1[src_lt.y+1][src_lt.x] + lds_mips1[src_lt.y+1][src_lt.x+1]) /4.0;
-	}
-	
-	// LDS上に構築した分のMipをバッチ的にUAV書き込み.
-	// こちらは読み取りも書き込み先も重複しないためバリアなし.
-	for(uint mip_i = 0; mip_i < k_tile_max_mip_count; ++mip_i)
-	{
-		const uint tile_mip_size = 1 << (k_tile_max_mip_count-1 - mip_i);
-		const uint2 mip_size = max(1, reso_half >> mip_i);
-		
-		// UAVのこの段階のMip書き込み.
-		const uint2 px_pos_in_mip = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) >> (mip_i)) + lds_pos;
-
-		// 書き込み先が現在のMip範囲内のみ処理, LDS内のMip範囲のみ処理.
-		if(any(px_pos_in_mip >= mip_size) || any(lds_pos >= tile_mip_size))
-			continue;
-		
-		// UAVの対象Mipの横方向オフセット.
-		const uint2 write_uav_mip_offset = uint2(CalcMipOffsetX(reso_half.x, mip_i), 0);
-		// UAVの書き込み先.
-		const uint2 write_thread_pos = write_uav_mip_offset + px_pos_in_mip;
-		
-		// LDS上のMipのオフセット位置. (横方向にMipレイアウト.
-		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
-		const uint2 px_pos_in_tile = lds_pos + cur_lds_offset;
-		// avg. 上段.
+		// LDSの開始Mipセットアップ.
 		{
-			const uint2 write_thread_pos_avg = write_thread_pos;
-			OutputTexture[write_thread_pos_avg] = lds_mips0[px_pos_in_tile.y][px_pos_in_tile.x];
+			// 入力テクスチャ読み込み.
+			const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 0), 0));
+			const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 0), 0));
+			const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 1), 0));
+			const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 1), 0));
+
+			// LDS書き込み
+			// 平均.
+			lds_mips[lds_pos.y][lds_pos.x] = (input_00 + input_10 + input_01 + input_11) * 0.25;
 		}
-		// sqavg. 下段.
+		// LDS利用したTile範囲Mip生成とUAV書き出し.
+		GenerateLdsMipAndWriteUavCore(
+			reso_half,
+			write_uav_offset,
+			start_mip_index,
+			work_mip_count,
+			Gid.xy,
+			lds_pos
+		);
+	}
+	// 二乗の平均.
+	{
+		const uint2 read_uav_offset = uint2(0, 0);// FirstPassはオリジナルピクセルを読み取るためオフセットしない.
+		const uint2 write_uav_offset = uint2(0, reso_half.y);
+		
+		// LDSの開始Mipセットアップ.
 		{
-			const uint2 write_thread_pos_avg = write_thread_pos + sqavg_offset;
-			OutputTexture[write_thread_pos_avg] = lds_mips1[px_pos_in_tile.y][px_pos_in_tile.x];
+			// 入力テクスチャ読み込み.
+			const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 0), 0));
+			const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 0), 0));
+			const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 1), 0));
+			const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 1), 0));
+
+			// LDS書き込み
+			// 二乗の平均.
+			lds_mips[lds_pos.y][lds_pos.x] = (input_00*input_00 + input_10*input_10 + input_01*input_01 + input_11*input_11) * 0.25;
+			
 		}
+		// LDS利用したTile範囲Mip生成とUAV書き出し.
+		GenerateLdsMipAndWriteUavCore(
+			reso_half,
+			write_uav_offset,
+			start_mip_index,
+			work_mip_count,
+			Gid.xy,
+			lds_pos
+		);
 	}
 }
 
+// FirstPassの後のUAV上での残りのMip生成.
+//	TODO. UAVから継続するための前の最大Mipを読み取る際に境界でClampしないと黒等が入ってきて適切な平均にならない問題が残っている.
+[numthreads(THREADGROUPSIZE,THREADGROUPSIZE,1)]
+void SecondCS(
+	uint3 Gid	: SV_GroupID,
+	uint3 DTid	: SV_DispatchThreadID,
+	uint3 GTid	: SV_GroupThreadID,
+	uint Gi		: SV_GroupIndex
+	)
+{
+	// ThreadGroup Tileのサイズ.
+	const int k_tile_max_mip_count = MostSignificantBit32(THREADGROUPSIZE) + 1;
+	const uint2 reso_half = OutputDimensions/2;
+
+	const uint start_mip_index = k_tile_max_mip_count;// SecondPassはTile分の縮小後のMipから.
+	const uint2 setup_read_offset = uint2(CalcMipOffsetX(reso_half.x, start_mip_index-1), 0);// FirstPassが書き込んだ最後のMipであるstart_mip_index-1から読み取る.
+	
+	const uint max_mip_size = max(max(reso_half.x, reso_half.y) >> start_mip_index, 1);
+	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
+	const uint work_mip_count = min(k_tile_max_mip_count, max_mip_count);
+	if(0 >= work_mip_count)
+		return;
+	
+	const uint2 lds_pos = GTid.xy;
+	
+	// LDSのMip1以降の領域をクリア.
+	{
+		// LDSは横方向に2倍サイズなので1Threadが1要素クリア.
+		lds_mips[lds_pos.y][lds_pos.x*2] = float4(0, 0, 0, 0);
+		lds_mips[lds_pos.y][lds_pos.x*2 + 1] = float4(0, 0, 0, 0);
+	}
+
+	const uint2 tile_read_lt_pos = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) * 2);
+	const uint2 thread_read_2x2_lt_pos = setup_read_offset + tile_read_lt_pos + GTid.xy*2;
+	
+	// 平均.
+	{
+		const uint2 read_uav_offset = uint2(0, 0);
+		const uint2 write_uav_offset = uint2(0, 0);
+		
+		// LDSの開始Mipセットアップ.
+		{
+			// 前Passで書き込まれたOutputTextureの最大Mipを読み取って続きを計算する.
+			const float4 input_00 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 0)];
+			const float4 input_10 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 0)];
+			const float4 input_01 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 1)];
+			const float4 input_11 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 1)];
+
+			// LDS書き込み
+			// 平均.
+			lds_mips[lds_pos.y][lds_pos.x] = (input_00 + input_10 + input_01 + input_11) * 0.25;
+		}
+		// LDS利用したTile範囲Mip生成とUAV書き出し.
+		GenerateLdsMipAndWriteUavCore(
+			reso_half,
+			write_uav_offset,
+			start_mip_index,
+			work_mip_count,
+			Gid.xy,
+			lds_pos
+		);
+	}
+	// 二乗平均.
+	{
+		const uint2 read_uav_offset = uint2(0, reso_half.y);// SecondPassでは前Passの書き込んだUAV位置を読み取るため書き込みと同じ縦方向オフセットする.
+		const uint2 write_uav_offset = uint2(0, reso_half.y);
+		
+		// LDSの開始Mipセットアップ.
+		{
+			// 前Passで書き込まれたOutputTextureの最大Mipを読み取って続きを計算する.
+			const float4 input_00 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 0)];
+			const float4 input_10 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 0)];
+			const float4 input_01 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 1)];
+			const float4 input_11 = OutputTexture[read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 1)];
+
+			// LDS書き込み
+			// 平均.
+			lds_mips[lds_pos.y][lds_pos.x] = (input_00 + input_10 + input_01 + input_11) * 0.25;
+		}
+		// LDS利用したTile範囲Mip生成とUAV書き出し.
+		GenerateLdsMipAndWriteUavCore(
+			reso_half,
+			write_uav_offset,
+			start_mip_index,
+			work_mip_count,
+			Gid.xy,
+			lds_pos
+		);
+	}
+}
 
 
 

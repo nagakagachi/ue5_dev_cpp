@@ -24,6 +24,7 @@ IMPLEMENT_GLOBAL_SHADER(FHistoryTestCS, "/ViewExtensionSampleShaders/Private/his
 
 
 IMPLEMENT_GLOBAL_SHADER(FSsQuadTreePrepareCS, "/ViewExtensionSampleShaders/Private/SsQuadTreeTest/ss_quadtree_prepare.usf", "FirstCS", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FSsQuadTreePrepareSecondCS, "/ViewExtensionSampleShaders/Private/SsQuadTreeTest/ss_quadtree_prepare.usf", "SecondCS", SF_Compute );
 IMPLEMENT_GLOBAL_SHADER(FSsQuadTreeDebugPS, "/ViewExtensionSampleShaders/Private/SsQuadTreeTest/ss_quadtree_debug.usf", "MainPS", SF_Pixel );
 
 

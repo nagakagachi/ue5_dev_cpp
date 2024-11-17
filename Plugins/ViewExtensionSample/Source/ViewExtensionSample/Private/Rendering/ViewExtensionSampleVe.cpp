@@ -278,28 +278,45 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		// TODO.
 		// テスト用のクリア. 全域をデバッグ用にスクリーンコピーする場合にNaNなどが入ると壊れるため, 検証用のクリアで本来はいらないはず.
 		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(TexQuadTreePrepare), 0.0f);
-		
+
+		// スクリーンスペースMipmap生成.
 		{
-			FSsQuadTreePrepareCS::FParameters* Parameters = GraphBuilder.AllocParameters<FSsQuadTreePrepareCS::FParameters>();
+			// First Pass.
 			{
-				Parameters->InputTexture = SceneColor.Texture;
-				Parameters->InputDimensions = WorkRect;
-
-				Parameters->OutputTexture = GraphBuilder.CreateUAV(TexQuadTreePrepare);
-				Parameters->OutputDimensions = WorkRect;
+				FSsQuadTreePrepareCS::FParameters* Parameters = GraphBuilder.AllocParameters<FSsQuadTreePrepareCS::FParameters>();
+				{
+					Parameters->InputTexture = SceneColor.Texture;
+					Parameters->InputDimensions = WorkRect;
+					Parameters->OutputTexture = GraphBuilder.CreateUAV(TexQuadTreePrepare);
+					Parameters->OutputDimensions = WorkRect;
+				}
+		
+				TShaderMapRef<FSsQuadTreePrepareCS> cs(GlobalShaderMap);
+				// ターゲットサイズの半分に対するDispatch.
+				const FUintVector2 target_mip_reso = WorkRect / 2;
+				FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(target_mip_reso.X, cs->THREADGROUPSIZE),
+						FMath::DivideAndRoundUp(target_mip_reso.Y, cs->THREADGROUPSIZE), 1);
+		
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("QuadTreePrepareFirst"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 			}
+			// Second Pass.
+			{
+				FSsQuadTreePrepareSecondCS::FParameters* Parameters = GraphBuilder.AllocParameters<FSsQuadTreePrepareSecondCS::FParameters>();
+				{
+					Parameters->OutputTexture = GraphBuilder.CreateUAV(TexQuadTreePrepare);
+					Parameters->OutputDimensions = WorkRect;
+				}
 		
-			TShaderMapRef<FSsQuadTreePrepareCS> cs(GlobalShaderMap);
-			
-			// operator/(IntType Divisor) -> 10 / 2 = 5
-			const FUintVector2 half_rect = WorkRect / 2;// * 0.5 だとtemplateで intに強制変換されて結果0乗算になる模様.
-			
-			FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(half_rect.X, cs->THREADGROUPSIZE),
-					FMath::DivideAndRoundUp(half_rect.Y, cs->THREADGROUPSIZE), 1);
+				TShaderMapRef<FSsQuadTreePrepareSecondCS> cs(GlobalShaderMap);
+				// ターゲットサイズの半分に対するDispatch.
+				// FirstPassで生成された最大Mipの次の段の分のDispatch.
+				const FUintVector2 target_mip_reso = (WorkRect / 2) / cs->THREADGROUPSIZE;
+				FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(target_mip_reso.X, cs->THREADGROUPSIZE),
+						FMath::DivideAndRoundUp(target_mip_reso.Y, cs->THREADGROUPSIZE), 1);
 		
-			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("QuadTreePrepare"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("QuadTreePrepareSecond"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+			}
 		}
-
 		{
 			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
 			

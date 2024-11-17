@@ -448,24 +448,53 @@ public:
 
 
 
+class FSsQuadTreePrepareBase : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE = 32;// シェーダ固定. シェーダ側と一致させるように.
+};
+
 // シェーダ側固定ThreadGroupSize..
 //	GPUOpen SPD と類似した実装のシングルパスで最大 4096->1のMip生成.
 //	ThreadGroupSizeは最終的には32
-class FSsQuadTreePrepareCS : public FGlobalShader
+class FSsQuadTreePrepareCS : public FSsQuadTreePrepareBase
 {
 public:
-	static constexpr uint32 THREADGROUPSIZE = 16;// シェーダ固定. シェーダ側と一致させるように.
-	
-public:
 	DECLARE_GLOBAL_SHADER(FSsQuadTreePrepareCS);
-	SHADER_USE_PARAMETER_STRUCT(FSsQuadTreePrepareCS, FGlobalShader);
+	SHADER_USE_PARAMETER_STRUCT(FSsQuadTreePrepareCS, FSsQuadTreePrepareBase);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewParam)
-	
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, InputTexture)
 		SHADER_PARAMETER(FUintVector2, InputDimensions)
-	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
+		SHADER_PARAMETER(FUintVector2, OutputDimensions)
+
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+	}
+};
+// シェーダ側固定ThreadGroupSize..
+//	GPUOpen SPD と類似した実装のシングルパスで最大 4096->1のMip生成.
+//	ThreadGroupSizeは最終的には32
+class FSsQuadTreePrepareSecondCS : public FSsQuadTreePrepareBase
+{
+public:
+	DECLARE_GLOBAL_SHADER(FSsQuadTreePrepareSecondCS);
+	SHADER_USE_PARAMETER_STRUCT(FSsQuadTreePrepareSecondCS, FSsQuadTreePrepareBase);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewParam)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutputTexture)
 		SHADER_PARAMETER(FUintVector2, OutputDimensions)
 
