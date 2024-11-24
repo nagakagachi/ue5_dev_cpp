@@ -1,0 +1,46 @@
+// single_plane_mip_util.usf
+
+// 元のテクスチャと同じサイズのテクスチャに 1/2 以降のMip Pyramidを横方向にレイアウトして生成する機能のUtil.
+
+// Bit Count. 0b0100 -> 1.
+int BitCount32(uint v)
+{
+	uint count = (v & 0x55555555) + ((v >> 1) & 0x55555555);
+	count = (count & 0x33333333) + ((count >> 2) & 0x33333333);
+	count = (count & 0x0f0f0f0f) + ((count >> 4) & 0x0f0f0f0f);
+	count = (count & 0x00ff00ff) + ((count >> 8) & 0x00ff00ff);
+	return (count & 0x0000ffff) + ((count >> 16) & 0x0000ffff);
+}
+// 最大ビット位置. 0b0100 -> 2
+int MostSignificantBit32(uint v)
+{
+	// v==0 の場合の例外処理は内部ではしない.
+	v |= (v >> 1);
+	v |= (v >> 2);
+	v |= (v >> 4);
+	v |= (v >> 8);
+	v |= (v >> 16);
+	return BitCount32(v) - 1;
+}
+
+// サイズからMip数計算.
+uint CalcSinglePlaneMipCount(uint2 resolution, uint start_mip_index)
+{
+	const uint max_mip_size = max(max(resolution.x, resolution.y) >> start_mip_index, 1);
+	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
+	return max_mip_count;
+}
+// 指定MipLevelのサイズ計算.
+uint2 CalcSinglePlaneMipResolution(uint2 resolution, uint mip_level)
+{
+	return max(1, resolution >> mip_level);
+}
+
+// 指定MipLevelの横方向レイアウトオフセットを計算. (等比級数和).
+uint2 CalcSinglePlaneMipOffsetX(uint resolution, uint mip_level)
+{
+	return uint2(resolution * ((1.0 / float(1 << mip_level)) - 1.0)/(0.5 - 1.0), 0);
+}
+
+
+

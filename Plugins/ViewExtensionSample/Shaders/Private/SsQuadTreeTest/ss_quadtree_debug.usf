@@ -2,10 +2,13 @@
 
 #include "/Engine/Private/Common.ush"
 
+#include "single_plane_mip_util.ush"
 
 Texture2D InputTexture;
 uint2 InputDimensions;
 SamplerState InputSampler;
+
+uint DisplayMipLevel;
 
 struct VsOutput
 {
@@ -23,9 +26,19 @@ PsOut MainPS(VsOutput input)
 {
 	PsOut output = (PsOut)0;
 
-	const float4 input_color = InputTexture.SampleLevel(InputSampler, input.UVAndScreenPos.xy, 0);
+	const uint2 base_mip_resolution = InputDimensions/2;// 半解像度以降のMipを格納しているのでベースは 1/2.
+	const int mip_count = CalcSinglePlaneMipCount(base_mip_resolution, 0);
+	const uint mip_level = clamp(DisplayMipLevel, 0, mip_count);
+	const uint2 mip_offset = CalcSinglePlaneMipOffsetX(base_mip_resolution, mip_level);
+	const uint2 mip_resolution = CalcSinglePlaneMipResolution(base_mip_resolution, mip_level);	
 
-	const float variance = max(0.0, input_color.y - (input_color.x * input_color.x));
+	const float2 mip_local_px_pos = clamp(input.UVAndScreenPos.xy * mip_resolution, 0, mip_resolution-1);
+
+	const float4 input_color = InputTexture.Load(int3( mip_local_px_pos + mip_offset, 0 ));
+
+	//const float4 input_color = InputTexture.SampleLevel(InputSampler, input.UVAndScreenPos.xy, 0);
+
+	//const float variance = max(0.0, input_color.y - (input_color.x * input_color.x));
 	
 	//output.color = float4(variance,variance,variance,variance);
 

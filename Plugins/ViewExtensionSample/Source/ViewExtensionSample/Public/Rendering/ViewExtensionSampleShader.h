@@ -525,6 +525,7 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, InputTexture)
 		SHADER_PARAMETER(FUintVector2, InputDimensions)
 		SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
+		SHADER_PARAMETER(UINT, DisplayMipLevel)
 	
 		RENDER_TARGET_BINDING_SLOTS()	// RenderTargetバインド.
 	END_SHADER_PARAMETER_STRUCT()

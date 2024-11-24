@@ -30,13 +30,16 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSinglePlaneMip")
+	bool enable_sssp_mip_display = false;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSinglePlaneMip", meta = (ClampMin = -1, ClampMax = 15))
+	int sssp_mip_display_level = -1;
+	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="HistoryTest")
 	bool enable_history_test = false;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="WorldNormalUnlitTest")
 	bool enable_worldnormal_unlit = false;
-
-
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="VoronoiEffectTest")
 	bool enable_voronoi_test = false;
@@ -70,6 +73,7 @@ public:
 	float lensh_ghost_step_scale = 0.1f;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="LensGhost")
 	float halo_sample_length = 0.1f;
+
 	
 };
 
@@ -90,6 +94,9 @@ private:
 public:
 	friend class FViewExtensionSampleVe;
 
+	bool enable_sssp_mip_display = false;
+	int sssp_mip_display_level = 0;
+	
 	bool enable_voronoi_test = false;
 	float depth_edge_coef = 0.02f;
 	bool enable_voronoi_tile_cell = true;

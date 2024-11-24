@@ -2,6 +2,7 @@
 
 #include "/Engine/Private/Common.ush"
 
+#include "single_plane_mip_util.ush"
 
 // FidelityFX SPD ではgloballycoherentを利用してシングルパス実行しているが,
 //	最後の同期のために別途AtomicCounter用RWBufferが必要で若干取り回しがわるいため, 今回はマルチパスとする
@@ -23,47 +24,8 @@ uint2 OutputDimensions;
 // 初回のみ入力テクスチャ読み取りのためFirstCS, それ以降は必要な回数だけ SecondCS を実行することで完全なMipChainを一つのテクスチャ上に横にレイアウト生成する.
 // 平均と二乗平均を同時計算するためにSharedMemoryサイズ制限でスレッド数も制限される.
 #define THREADGROUPSIZE 32
-
 groupshared float4 lds_mips[THREADGROUPSIZE][THREADGROUPSIZE * 2];
 
-// Bit Count. 0b0100 -> 1.
-int BitCount32(uint v)
-{
-	uint count = (v & 0x55555555) + ((v >> 1) & 0x55555555);
-	count = (count & 0x33333333) + ((count >> 2) & 0x33333333);
-	count = (count & 0x0f0f0f0f) + ((count >> 4) & 0x0f0f0f0f);
-	count = (count & 0x00ff00ff) + ((count >> 8) & 0x00ff00ff);
-	return (count & 0x0000ffff) + ((count >> 16) & 0x0000ffff);
-}
-// 最大ビット位置. 0b0100 -> 2
-int MostSignificantBit32(uint v)
-{
-	// v==0 の場合の例外処理は内部ではしない.
-	v |= (v >> 1);
-	v |= (v >> 2);
-	v |= (v >> 4);
-	v |= (v >> 8);
-	v |= (v >> 16);
-	return BitCount32(v) - 1;
-}
-
-uint CalcMipCount(uint2 resolution, uint start_mip_index)
-{
-	const uint max_mip_size = max(max(resolution.x, resolution.y) >> start_mip_index, 1);
-	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
-	return max_mip_count;
-}
-
-uint2 CalcMipResolution(uint2 resolution, uint mip_level)
-{
-	return max(1, resolution >> mip_level);
-}
-
-// 横方向レイアウトMipのオフセットを等比級数和で直接計算.
-uint CalcMipOffsetX(uint resolution, uint mip_level)
-{
-	return uint(resolution * ((1.0 / float(1 << mip_level)) - 1.0)/(0.5 - 1.0));
-}
 
 // LDSにセットアップした処理対象範囲の最小Mipを元にLOD上でTile上限Mipを生成し, UAVに書き出す.
 // ... 32 16 8 4 2 1 ...
@@ -82,8 +44,8 @@ void GenerateLdsMipAndWriteUavCore(
 	{
 		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
 		const uint pre_tile_mip_size = tile_mip_size << 1; // *2
-		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
-		const uint2 pre_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i-1), 0);
+		const uint2 cur_lds_offset = CalcSinglePlaneMipOffsetX(THREADGROUPSIZE, mip_i);
+		const uint2 pre_lds_offset = CalcSinglePlaneMipOffsetX(THREADGROUPSIZE, mip_i-1);
 		
 		// 前のMipの他のThread書き込み待ち.
 		GroupMemoryBarrierWithGroupSync();
@@ -107,7 +69,7 @@ void GenerateLdsMipAndWriteUavCore(
 		const uint uav_mip_index = start_mip_index + mip_i;
 		
 		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
-		const uint2 uav_mip_size = CalcMipResolution(max_mip_resolution, uav_mip_index);
+		const uint2 uav_mip_size = CalcSinglePlaneMipResolution(max_mip_resolution, uav_mip_index);
 		
 		// UAVのこの段階のMip書き込み.
 		const uint2 px_pos_in_mip = tile_index * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) >> (mip_i)) + pos_in_tile;
@@ -117,12 +79,12 @@ void GenerateLdsMipAndWriteUavCore(
 			continue;
 		
 		// UAVの対象Mipの横方向オフセット.
-		const uint2 write_uav_mip_offset = uint2(CalcMipOffsetX(max_mip_resolution.x, uav_mip_index), 0);
+		const uint2 write_uav_mip_offset = CalcSinglePlaneMipOffsetX(max_mip_resolution.x, uav_mip_index);
 		// UAVの書き込み先.
 		const uint2 write_thread_pos = write_uav_mip_offset + px_pos_in_mip;
 		
 		// LDS上のMipのオフセット位置. (横方向にMipレイアウト.
-		const uint2 cur_lds_offset = uint2(CalcMipOffsetX(THREADGROUPSIZE, mip_i), 0);
+		const uint2 cur_lds_offset = CalcSinglePlaneMipOffsetX(THREADGROUPSIZE, mip_i);
 		const uint2 px_pos_in_tile = pos_in_tile + cur_lds_offset;
 		
 		// avg. 上段.
@@ -149,7 +111,7 @@ void FirstCS(
 	const uint start_mip_index = 0;// FirstPassは0から.
 	const uint2 setup_read_offset = uint2(0, 0);// 入力テクスチャ全域を読み取るので 0,0 起点.
 
-	const uint max_mip_count = CalcMipCount(reso_half, start_mip_index);
+	const uint max_mip_count = CalcSinglePlaneMipCount(reso_half, start_mip_index);
 	const uint work_mip_count = min(k_tile_max_mip_count, max_mip_count);
 	if(0 >= work_mip_count)
 		return;
@@ -238,9 +200,9 @@ void SecondCS(
 	const uint2 reso_half = OutputDimensions/2;
 
 	const uint start_mip_index = k_tile_max_mip_count;// SecondPassはTile分の縮小後のMipから.
-	const uint2 setup_read_offset = uint2(CalcMipOffsetX(reso_half.x, start_mip_index-1), 0);// FirstPassが書き込んだ最後のMipであるstart_mip_index-1から読み取る.
+	const uint2 setup_read_offset = CalcSinglePlaneMipOffsetX(reso_half.x, start_mip_index-1);// FirstPassが書き込んだ最後のMipであるstart_mip_index-1から読み取る.
 	
-	const uint max_mip_count = CalcMipCount(reso_half, start_mip_index);
+	const uint max_mip_count = CalcSinglePlaneMipCount(reso_half, start_mip_index);
 	const uint work_mip_count = min(k_tile_max_mip_count, max_mip_count);
 	if(0 >= work_mip_count)
 		return;

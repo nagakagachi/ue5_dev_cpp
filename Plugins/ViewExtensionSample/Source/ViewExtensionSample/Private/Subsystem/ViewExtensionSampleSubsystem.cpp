@@ -20,6 +20,9 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 		auto* subsystem = GEngine->GetEngineSubsystem<UViewExtensionSampleSubsystem>();
 		if(subsystem)
 		{
+			subsystem->enable_sssp_mip_display = enable_sssp_mip_display;
+			subsystem->sssp_mip_display_level = sssp_mip_display_level;
+			
 			subsystem->enable_voronoi_test = enable_voronoi_test;
 			subsystem->depth_edge_coef = depth_edge_coef;
 			subsystem->edge_debug_view = edge_debug_view;

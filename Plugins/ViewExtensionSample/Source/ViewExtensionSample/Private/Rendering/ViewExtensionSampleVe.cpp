@@ -268,6 +268,7 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 		}
 	}
 
+	if(subsystem->enable_sssp_mip_display && (0 <= subsystem->sssp_mip_display_level))
 	{
 		FRDGTextureRef TexQuadTreePrepare = GraphBuilder.CreateTexture(
 			FRDGTextureDesc::Create2D(scene_color_desc.Extent, PF_FloatRGBA, scene_color_desc.ClearValue, ETextureCreateFlags::ShaderResource|ETextureCreateFlags::UAV),
@@ -317,6 +318,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("QuadTreePrepareSecond"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
 			}
 		}
+
+		// デバッグ描画.
 		{
 			const FScreenPassTextureViewport RegionViewport(SceneColor.Texture, PrimaryViewRect);
 			
@@ -325,6 +328,8 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				Parameters->InputTexture = TexQuadTreePrepare;
 				Parameters->InputSampler = LinearClampSampler;
 				Parameters->InputDimensions = WorkRect;
+
+				Parameters->DisplayMipLevel = subsystem->sssp_mip_display_level;
 				
 				Parameters->RenderTargets[0] = FRenderTargetBinding{ SceneColor.Texture, ERenderTargetLoadAction::ENoAction };
 			}
