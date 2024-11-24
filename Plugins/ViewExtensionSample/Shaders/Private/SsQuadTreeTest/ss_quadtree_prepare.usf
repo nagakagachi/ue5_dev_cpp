@@ -47,6 +47,18 @@ int MostSignificantBit32(uint v)
 	return BitCount32(v) - 1;
 }
 
+uint CalcMipCount(uint2 resolution, uint start_mip_index)
+{
+	const uint max_mip_size = max(max(resolution.x, resolution.y) >> start_mip_index, 1);
+	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
+	return max_mip_count;
+}
+
+uint2 CalcMipResolution(uint2 resolution, uint mip_level)
+{
+	return max(1, resolution >> mip_level);
+}
+
 // 横方向レイアウトMipのオフセットを等比級数和で直接計算.
 uint CalcMipOffsetX(uint resolution, uint mip_level)
 {
@@ -95,7 +107,7 @@ void GenerateLdsMipAndWriteUavCore(
 		const uint uav_mip_index = start_mip_index + mip_i;
 		
 		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
-		const uint2 uav_mip_size = max(1, max_mip_resolution >> uav_mip_index);
+		const uint2 uav_mip_size = CalcMipResolution(max_mip_resolution, uav_mip_index);
 		
 		// UAVのこの段階のMip書き込み.
 		const uint2 px_pos_in_mip = tile_index * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) >> (mip_i)) + pos_in_tile;
@@ -137,8 +149,7 @@ void FirstCS(
 	const uint start_mip_index = 0;// FirstPassは0から.
 	const uint2 setup_read_offset = uint2(0, 0);// 入力テクスチャ全域を読み取るので 0,0 起点.
 
-	const uint max_mip_size = max(max(reso_half.x, reso_half.y) >> start_mip_index, 1);
-	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
+	const uint max_mip_count = CalcMipCount(reso_half, start_mip_index);
 	const uint work_mip_count = min(k_tile_max_mip_count, max_mip_count);
 	if(0 >= work_mip_count)
 		return;
@@ -229,8 +240,7 @@ void SecondCS(
 	const uint start_mip_index = k_tile_max_mip_count;// SecondPassはTile分の縮小後のMipから.
 	const uint2 setup_read_offset = uint2(CalcMipOffsetX(reso_half.x, start_mip_index-1), 0);// FirstPassが書き込んだ最後のMipであるstart_mip_index-1から読み取る.
 	
-	const uint max_mip_size = max(max(reso_half.x, reso_half.y) >> start_mip_index, 1);
-	const uint max_mip_count = MostSignificantBit32(max_mip_size) + 1;
+	const uint max_mip_count = CalcMipCount(reso_half, start_mip_index);
 	const uint work_mip_count = min(k_tile_max_mip_count, max_mip_count);
 	if(0 >= work_mip_count)
 		return;
