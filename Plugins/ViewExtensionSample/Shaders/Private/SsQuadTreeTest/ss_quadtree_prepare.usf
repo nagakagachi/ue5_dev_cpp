@@ -38,11 +38,14 @@ void GenerateLdsMipAndWriteUavCore(
 	uint2 pos_in_tile
 )
 {
+	const int k_tile_max_mip_count = MostSignificantBit32(THREADGROUPSIZE) + 1;
+	
 	// Group毎のLDS上で可能な範囲でMip計算.
 	// LOS作業は最上段の一つ下から開始なので 1 開始.
 	for(uint mip_i = 1; mip_i < work_mip_count; ++mip_i)
 	{
-		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
+		const uint tile_mip_size = 1 << (k_tile_max_mip_count-1 - mip_i);// ここはwork_mip_countは誤り, k_tile_max_mip_countが正しい.
+		
 		const uint pre_tile_mip_size = tile_mip_size << 1; // *2
 		const uint2 cur_lds_offset = CalcSinglePlaneMipOffsetX(THREADGROUPSIZE, mip_i);
 		const uint2 pre_lds_offset = CalcSinglePlaneMipOffsetX(THREADGROUPSIZE, mip_i-1);
@@ -57,7 +60,6 @@ void GenerateLdsMipAndWriteUavCore(
 		const uint2 src_lt = min(pos_in_tile*2, pre_tile_mip_size - 1) + pre_lds_offset;
 		const uint2 dst_pos = pos_in_tile + cur_lds_offset;
 
-		// avg. 上段.
 		lds_mips[dst_pos.y][dst_pos.x] =
 			(lds_mips[src_lt.y][src_lt.x] + lds_mips[src_lt.y][src_lt.x+1] + lds_mips[src_lt.y+1][src_lt.x] + lds_mips[src_lt.y+1][src_lt.x+1]) * 0.25;
 	}
@@ -68,13 +70,14 @@ void GenerateLdsMipAndWriteUavCore(
 	{
 		const uint uav_mip_index = start_mip_index + mip_i;
 		
-		const uint tile_mip_size = 1 << (work_mip_count-1 - mip_i);
+		const uint tile_mip_size = 1 << (k_tile_max_mip_count-1 - mip_i);// ここはwork_mip_countは誤り, k_tile_max_mip_countが正しい.
 		const uint2 uav_mip_size = CalcSinglePlaneMipResolution(max_mip_resolution, uav_mip_index);
 		
 		// UAVのこの段階のMip書き込み.
 		const uint2 px_pos_in_mip = tile_index * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) >> (mip_i)) + pos_in_tile;
-
-		// 書き込み先が現在のMip範囲内のみ処理, LDS内のMip範囲のみ処理.
+		
+		// 書き込み先が現在のMip範囲内のみ処理.
+		//	LDS内のMip範囲制限は不要. むしろ.
 		if(any(px_pos_in_mip >= uav_mip_size) || any(pos_in_tile >= tile_mip_size))
 			continue;
 		
@@ -87,9 +90,9 @@ void GenerateLdsMipAndWriteUavCore(
 		const uint2 cur_lds_offset = CalcSinglePlaneMipOffsetX(THREADGROUPSIZE, mip_i);
 		const uint2 px_pos_in_tile = pos_in_tile + cur_lds_offset;
 		
-		// avg. 上段.
+		const uint2 write_thread_pos_avg = write_thread_pos + write_uav_offset;
+		
 		{
-			const uint2 write_thread_pos_avg = write_thread_pos + write_uav_offset;
 			OutputTexture[write_thread_pos_avg] = lds_mips[px_pos_in_tile.y][px_pos_in_tile.x];
 		}
 	}

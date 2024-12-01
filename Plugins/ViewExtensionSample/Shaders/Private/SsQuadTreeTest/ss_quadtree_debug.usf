@@ -34,15 +34,29 @@ PsOut MainPS(VsOutput input)
 
 	const float2 mip_local_px_pos = clamp(input.UVAndScreenPos.xy * mip_resolution, 0, mip_resolution-1);
 
-	const float4 input_color = InputTexture.Load(int3( mip_local_px_pos + mip_offset, 0 ));
+	const float2 pixel_size = 1.0 / (float2)InputDimensions;
+	const float2 mip_uv_lt = (float2)(mip_offset) * pixel_size;
+	const float2 mip_uv_rb = (float2)(mip_offset + mip_resolution) * pixel_size;
 
-	//const float4 input_color = InputTexture.SampleLevel(InputSampler, input.UVAndScreenPos.xy, 0);
+	const float2 mip_uv = lerp(mip_uv_lt, mip_uv_rb, input.UVAndScreenPos.xy);
 
-	//const float variance = max(0.0, input_color.y - (input_color.x * input_color.x));
 	
-	//output.color = float4(variance,variance,variance,variance);
+	const float4 input_color = InputTexture.Load(int3( mip_local_px_pos + mip_offset, 0 ));
+	// 二乗平均Mipも取得.
+	//const float4 input_color_sq = InputTexture.Load(int3( mip_local_px_pos + mip_offset + uint2(0, base_mip_resolution.y), 0 ));
+	
+	//const float4 input_color = InputTexture.SampleLevel(InputSampler, mip_uv, 0);
+	// 二乗平均Mipも取得.
+	//const float4 input_color_sq = InputTexture.SampleLevel(InputSampler, input.UVAndScreenPos.xy*mip_uv_region + mip_uv_offset + float2(0.0, 0.5), 0);
 
-	output.color = float4(input_color.xyz, 1.0);
+	// 分散.
+	//const float4 color_variance_rgba = max(0 ,input_color_sq - input_color*input_color);
+	//float4 out_color = (float4)dot(color_variance_rgba, float4(1,1,1,1));
+	float4 out_color = input_color;
+	
+	//const float4 out_color = InputTexture.SampleLevel(InputSampler, input.UVAndScreenPos.xy, 0);
+
+	output.color = float4(out_color.xyz, 1.0);
 
 	
 	return output;
