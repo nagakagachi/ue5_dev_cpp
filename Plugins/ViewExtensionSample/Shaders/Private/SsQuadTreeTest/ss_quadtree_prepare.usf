@@ -131,7 +131,7 @@ void FirstCS(
 	const uint2 tile_read_lt_pos = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) * 2);
 	const uint2 thread_read_2x2_lt_pos = setup_read_offset + tile_read_lt_pos + GTid.xy*2;
 
-	// 平均.
+	// 上段 平均.
 	{
 		const uint2 read_uav_offset = uint2(0, 0);
 		const uint2 write_uav_offset = uint2(0, 0);
@@ -139,10 +139,10 @@ void FirstCS(
 		// LDSの開始Mipセットアップ.
 		{
 			// 入力テクスチャ読み込み.
-			const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 0), 0));
-			const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 0), 0));
-			const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 1), 0));
-			const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 1), 0));
+			const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 0), 0));
+			const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 0), 0));
+			const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 1), 0));
+			const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 1), 0));
 
 			// LDS書き込み
 			// 平均.
@@ -158,23 +158,49 @@ void FirstCS(
 			lds_pos
 		);
 	}
-	// 二乗の平均.
+	// 下段.
 	{
 		const uint2 read_uav_offset = uint2(0, 0);// FirstPassはオリジナルピクセルを読み取るためオフセットしない.
 		const uint2 write_uav_offset = uint2(0, reso_half.y);
 		
 		// LDSの開始Mipセットアップ.
 		{
-			// 入力テクスチャ読み込み.
-			const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 0), 0));
-			const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 0), 0));
-			const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(0, 1), 0));
-			const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + uint2(1, 1), 0));
-
-			// LDS書き込み
+#if 0
 			// 二乗の平均.
-			lds_mips[lds_pos.y][lds_pos.x] = (input_00*input_00 + input_10*input_10 + input_01*input_01 + input_11*input_11) * 0.25;
-			
+			{
+				// 入力テクスチャ読み込み.
+				const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 0), 0));
+				const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 0), 0));
+				const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 1), 0));
+				const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 1), 0));
+
+				// LDS書き込み
+				// 二乗の平均.
+				lds_mips[lds_pos.y][lds_pos.x] = (input_00*input_00 + input_10*input_10 + input_01*input_01 + input_11*input_11) * 0.25;
+			}
+#else
+			// エッジ.
+			{
+				// 入力テクスチャ読み込み.
+				const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 0), 0));
+				
+				const float4 input_nx = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(-1, 0), 0));
+				const float4 input_px = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 0), 0));
+				
+				const float4 input_ny = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, -1), 0));
+				const float4 input_py = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 1), 0));
+
+				float4 laplacian = (input_nx + input_px + input_ny + input_py) - 4.0*input_00;
+				laplacian = abs(laplacian);
+				float laplacian_scalar = dot(laplacian, float4(1,1,1,1));
+
+				float edge = (0.1 < laplacian_scalar)? 1.0 : 0.0;
+				
+				// LDS書き込み
+				// 二乗の平均.
+				lds_mips[lds_pos.y][lds_pos.x] = edge;
+			}
+#endif
 		}
 		// LDS利用したTile範囲Mip生成とUAV書き出し.
 		GenerateLdsMipAndWriteUavCore(
@@ -222,7 +248,7 @@ void SecondCS(
 	const uint2 tile_read_lt_pos = Gid.xy * (uint2(THREADGROUPSIZE, THREADGROUPSIZE) * 2);
 	const uint2 thread_read_2x2_lt_pos = setup_read_offset + tile_read_lt_pos + GTid.xy*2;
 	
-	// 平均.
+	// 上段.
 	{
 		const uint2 read_uav_offset = uint2(0, 0);
 		const uint2 write_uav_offset = uint2(0, 0);
@@ -249,7 +275,8 @@ void SecondCS(
 			lds_pos
 		);
 	}
-	// 二乗平均.
+
+	// 下段.
 	{
 		const uint2 read_uav_offset = uint2(0, reso_half.y);// SecondPassでは前Passの書き込んだUAV位置を読み取るため書き込みと同じ縦方向オフセットする.
 		const uint2 write_uav_offset = uint2(0, reso_half.y);
