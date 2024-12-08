@@ -33,7 +33,7 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSinglePlaneMip")
 	bool enable_sssp_mip_display = false;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSinglePlaneMip", meta = (ClampMin = -1, ClampMax = 15))
-	int sssp_mip_display_level = -1;
+	int sssp_mip_display_level = 0;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="HistoryTest")
 	bool enable_history_test = false;

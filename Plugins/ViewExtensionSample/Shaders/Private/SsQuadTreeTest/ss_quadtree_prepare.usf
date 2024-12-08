@@ -182,22 +182,43 @@ void FirstCS(
 			// エッジ.
 			{
 				// 入力テクスチャ読み込み.
-				const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 0), 0));
+				const float4 input_00 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(-1, -1), 0));
+				const float4 input_10 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, -1), 0));
+				const float4 input_20 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, -1), 0));
+				const float4 input_30 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(2, -1), 0));
 				
-				const float4 input_nx = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(-1, 0), 0));
-				const float4 input_px = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 0), 0));
+				const float4 input_01 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(-1, 0), 0));
+				const float4 input_11 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 0), 0));
+				const float4 input_21 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 0), 0));
+				const float4 input_31 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(2, 0), 0));
+
+				const float4 input_02 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(-1, 1), 0));
+				const float4 input_12 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 1), 0));
+				const float4 input_22 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 1), 0));
+				const float4 input_32 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(2, 1), 0));
 				
-				const float4 input_ny = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, -1), 0));
-				const float4 input_py = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 1), 0));
+				const float4 input_03 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(-1, 2), 0));
+				const float4 input_13 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(0, 2), 0));
+				const float4 input_23 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(1, 2), 0));
+				const float4 input_33 = InputTexture.Load(int3(read_uav_offset + thread_read_2x2_lt_pos + int2(2, 2), 0));
 
-				float4 laplacian = (input_nx + input_px + input_ny + input_py) - 4.0*input_00;
-				laplacian = abs(laplacian);
-				float laplacian_scalar = dot(laplacian, float4(1,1,1,1));
 
-				float edge = (0.1 < laplacian_scalar)? 1.0 : 0.0;
+				float4 laplacian0 = abs( (input_00 + input_10 + input_20 + input_01 + input_21 + input_02 + input_12 + input_22) - 8.0*input_11);
+				float4 laplacian1 = abs( (input_10 + input_20 + input_30 + input_11 + input_31 + input_12 + input_22 + input_32) - 8.0*input_21);
+				float4 laplacian2 = abs( (input_01 + input_11 + input_21 + input_02 + input_22 + input_03 + input_13 + input_23) - 8.0*input_12);
+				float4 laplacian3 = abs( (input_11 + input_21 + input_31 + input_12 + input_32 + input_13 + input_23 + input_33) - 8.0*input_22);
+
+				
+				float laplacian_scalar0 = dot(laplacian0, float4(1,1,1,1));
+				float laplacian_scalar1 = dot(laplacian1, float4(1,1,1,1));
+				float laplacian_scalar2 = dot(laplacian2, float4(1,1,1,1));
+				float laplacian_scalar3 = dot(laplacian3, float4(1,1,1,1));
+
+				float laplacian_scalar = max(max(laplacian_scalar0, laplacian_scalar1), max(laplacian_scalar2, laplacian_scalar3));
+				
+				float edge = (0.25 < laplacian_scalar)? 1.0 : 0.0;
 				
 				// LDS書き込み
-				// 二乗の平均.
 				lds_mips[lds_pos.y][lds_pos.x] = edge;
 			}
 #endif

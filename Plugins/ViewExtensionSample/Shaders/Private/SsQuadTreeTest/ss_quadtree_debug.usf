@@ -38,81 +38,25 @@ PsOut MainPS(VsOutput input)
 
 	const float2 ss_uv = input.UVAndScreenPos.xy;
 #if 0
-
-	const uint4 mip0_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, 0);
-	const float4 color_avg0 = InputTexture.Load(int3( (ss_uv * mip0_offset_size.zw) + mip0_offset_size.xy, 0 ));
-	const float4 color_sub_avg0 = InputTexture.Load(int3( (ss_uv * mip0_offset_size.zw) + mip0_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
-	
-	const uint search_mip_max = mip_count * 1.0;
-	float max_var = -1.0;
-	int max_var_mip = search_mip_max;
-	for(int mip_level = 0; mip_level < search_mip_max; ++mip_level)
-	{
-		//const int mip = search_mip_max - 1 - mip_level;
-		const int mip = mip_level;
-
-		const uint4 mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, mip);
-	
-		const float4 color_sub_avg = InputTexture.Load(int3( (ss_uv * mip_offset_size.zw) + mip_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
-
-		const float area_width = 1 << mip;
-		const float mip_color_total = color_sub_avg.x * (area_width*area_width);
-		
-		if(mip_color_total > color_sub_avg0.x)
-		{
-			max_var = color_sub_avg.x;
-			max_var_mip = mip;
-			break;
-		}
-	}
-	
-	const float max_var_mip_rate = float(max_var_mip)/(mip_count-1);
-	
-	//float4 out_color = color_avg0;
-	float4 out_color = float4(max_var_mip_rate,max_var_mip_rate,max_var_mip_rate,1);
-	
-	//if(0.5 < ss_uv.x)
-	{
-
-		const int sample_mip = max(0, max_var_mip);
-		
-		const uint4 max_var_mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, sample_mip);
-		const float4 max_var_color_avg = InputTexture.Load(int3( (ss_uv * max_var_mip_offset_size.zw) + max_var_mip_offset_size.xy, 0 ));
-		out_color = float4(max_var_color_avg.xyz, 1.0);
-		
-		//out_color = float4(max_var_mip_rate, max_var_mip_rate, max_var_mip_rate, 1.0);
-	}
-	
-	output.color = out_color;
-#elif 1
-	// エッジカウント.
-	// Mip+1 の推定エッジ数に対して Mip の推定エッジ数 の割合が一定以下の場合はディティールがないものとして探索を終了すればよいか.
-
-	
+	// エッジ付近のみ解像度を高く表示するテスト.
 	const uint4 mip0_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, 0);
 	const float4 color_avg0 = InputTexture.Load(int3( (ss_uv * mip0_offset_size.zw) + mip0_offset_size.xy, 0 ));
 	const float4 color_sub_avg0 = InputTexture.Load(int3( (ss_uv * mip0_offset_size.zw) + mip0_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
 	
 	const uint search_mip_max = mip_count;
-	int display_mip = search_mip_max-1;
-	for(int mip_level = 1; mip_level <  search_mip_max-1; ++mip_level)
+	int display_mip = 0;
+	for(int mip_level = 0; mip_level <  search_mip_max-1; ++mip_level)
 	{
-		//const int mip = search_mip_max - 1 - mip_level;
-		const int mip = mip_level;
+		const int mip = search_mip_max - 1 - mip_level;
 
-		//const uint4 parent_mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, mip);
-		const uint4 child_mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, mip-1);
-		//const float4 parent_value = InputTexture.Load(int3( (ss_uv * parent_mip_offset_size.zw) + parent_mip_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
-		const float4 child_value = InputTexture.Load(int3( (ss_uv * child_mip_offset_size.zw) + child_mip_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
+		const uint4 parent_mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, mip);
+		const float4 parent_value = InputTexture.Load(int3( (ss_uv * parent_mip_offset_size.zw) + parent_mip_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
 
 		// このMipの1ピクセルの総面積からエッジ総数を計算.
-		//const float parent_mip_total = parent_value.x * (1 << (mip*2));
-		const float child_area = (1 << ((mip-1)*2));
-		const float child_mip_total = child_value.x * child_area;
-		
-		if((1.0/child_area)*0.5 <= child_mip_total)
+		const float parent_mip_total = parent_value.x * (1 << (mip*2));
+		if(0 == parent_mip_total)
 		{
-			display_mip = mip-1;
+			display_mip = mip;
 			break;
 		}
 	}
@@ -121,21 +65,18 @@ PsOut MainPS(VsOutput input)
 	
 	float4 out_color = float4(display_mip_rate, display_mip_rate, display_mip_rate, 1);
 
-	//if(0.5 < ss_uv.x)
+	if(0.1 < ss_uv.x)
 	{
-		//const uint4 debug_mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, clamp(DisplayMipLevel, 0, mip_count-1));
 		const uint4 debug_mip_offset_size = CalcSinglePlaneMipOffsetAndSize(base_mip_resolution, clamp(display_mip, 0, mip_count-1));
 		
-		//const float4 debug_color = InputTexture.Load(int3( (ss_uv * debug_mip_offset_size.zw) + debug_mip_offset_size.xy + uint2(0, base_mip_resolution.y), 0 ));
 		const float4 debug_color = InputTexture.Load(int3( (ss_uv * debug_mip_offset_size.zw) + debug_mip_offset_size.xy + uint2(0, 0), 0 ));
 		out_color = float4(debug_color.xyz, 1.0);
-		
-		//out_color = float4(max_var_mip_rate, max_var_mip_rate, max_var_mip_rate, 1.0);
 	}
 	
 	output.color = out_color;
 
 #else
+	// デバッグ表示.
 	const uint req_mip_level = DisplayMipLevel;
 	const uint mip_level = clamp(req_mip_level, 0, mip_count-1);
 	const uint2 mip_offset = CalcSinglePlaneMipOffsetX(base_mip_resolution, mip_level);
@@ -144,18 +85,12 @@ PsOut MainPS(VsOutput input)
 	const float2 mip_local_px_pos = clamp(ss_uv * mip_resolution, 0, mip_resolution-1);
 	
 	const float4 color_avg = InputTexture.Load(int3( mip_local_px_pos + mip_offset, 0 ));
-	const float4 color_sq_avg = InputTexture.Load(int3( mip_local_px_pos + mip_offset + uint2(0, base_mip_resolution.y), 0 ));
-	
-	// 分散.
-	const float4 color_variance_rgba = max(0 ,color_sq_avg - color_avg*color_avg);
-	const float color_variance = (float4)dot(color_variance_rgba, float4(1,1,1,1));
+	const float4 color_sub_avg = InputTexture.Load(int3( mip_local_px_pos + mip_offset + uint2(0, base_mip_resolution.y), 0 ));
 	
 	float4 out_color = color_avg;
 	if(0.5 < ss_uv.x)
 	{
-		//out_color = float4(color_variance, color_variance, color_variance, 1.0);
-
-		out_color = color_sq_avg;
+		out_color = color_sub_avg;
 	}
 	output.color = out_color;
 #endif
