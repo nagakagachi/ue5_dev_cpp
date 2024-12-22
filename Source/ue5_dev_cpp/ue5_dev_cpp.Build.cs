@@ -8,6 +8,22 @@ public class ue5_dev_cpp : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine", 
+			"InputCore", 
+			"EnhancedInput",
+			
+			
+			"ProceduralMeshComponent", // for VoxelEngine.
+		});
+		
+		if (Target.bBuildEditor)
+		{
+			// Editorモードでの機能用.
+			PublicDependencyModuleNames.AddRange(new string[] { "UnrealEd" });
+		}
 	}
 }

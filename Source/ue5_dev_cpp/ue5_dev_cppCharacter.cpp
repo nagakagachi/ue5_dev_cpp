@@ -11,6 +11,11 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 
+
+#include "ngl/spatial_structure/hierarchical_grid.h"
+#include "ngl/physics/sparse_voxel_mpm.h"
+
+
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 //////////////////////////////////////////////////////////////////////////
