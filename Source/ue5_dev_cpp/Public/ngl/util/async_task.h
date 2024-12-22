@@ -10,7 +10,7 @@
 
 namespace ngl
 {
-	class FNglAsyncTask
+	class FAsyncTaskBase
 	{
 	private:
 		// 非同期実行される関数.
@@ -20,12 +20,12 @@ namespace ngl
 			// TODO.
 		}
 	public:
-		class FNglAsyncFunc : public FNonAbandonableTask
+		class FAsyncFunc : public FNonAbandonableTask
 		{
-			friend class FAsyncTask<FNglAsyncFunc>;
+			friend class FAsyncTask<FAsyncFunc>;
 
 		public:
-			FNglAsyncFunc(TFunction<void()> InWork)
+			FAsyncFunc(TFunction<void()> InWork)
 				: Work(InWork){}
 			void DoWork()
 			{
@@ -33,14 +33,14 @@ namespace ngl
 			}
 			FORCEINLINE TStatId GetStatId() const
 			{
-				RETURN_QUICK_DECLARE_CYCLE_STAT(FNglAsyncFunc, STATGROUP_ThreadPoolAsyncTasks);
+				RETURN_QUICK_DECLARE_CYCLE_STAT(FAsyncFunc, STATGROUP_ThreadPoolAsyncTasks);
 			}
 		private:
 			TFunction<void()> Work;
 		};
 	public:
-		FNglAsyncTask();
-		virtual ~FNglAsyncTask();
+		FAsyncTaskBase();
+		virtual ~FAsyncTaskBase();
 
 		// Asyncタスクが完了しているか.
 		bool IsDone() const;
@@ -55,30 +55,26 @@ namespace ngl
 		void AsyncUpdateRelay();
 
 	protected:
-		TUniquePtr<FAsyncTask<FNglAsyncFunc>>	async_task_;
+		TUniquePtr<FAsyncTask<FAsyncFunc>>	async_task_;
 	};
 
 
 
-
-	// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-	// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-	// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-	class NglFNglAsycTaskImplTest : protected FNglAsyncTask
+	// AsyncTaskの実装サンプル.
+	class FAsycTaskImplTest : protected FAsyncTaskBase
 	{
 	public:
-		NglFNglAsycTaskImplTest()
+		FAsycTaskImplTest()
 		{
 		}
-		~NglFNglAsycTaskImplTest()
+		~FAsycTaskImplTest()
 		{
 			Finalize();
 		}
 
 		bool Initialize()
 		{
-			// Async完了待ち
+			// Async完了待ち. 念の為.
 			WaitAsyncUpdate();
 
 			// TODO
@@ -104,7 +100,7 @@ namespace ngl
 			// TODO.
 
 
-			// Async起動
+			// ここからAsync起動
 			StartAsyncUpdate();
 		}
 	private:

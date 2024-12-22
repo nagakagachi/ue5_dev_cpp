@@ -6,7 +6,7 @@
 
 namespace ngl
 {
-	class NglVoxelNoise
+	class TestVoxelNoise
 	{
 	private:
 		static FVector Floor(const FVector& v)

@@ -3,12 +3,12 @@
 
 namespace ngl
 {
-	FNglAsyncTask::FNglAsyncTask()
+	FAsyncTaskBase::FAsyncTaskBase()
 	{
 		// タスクセットアップ
-		async_task_.Reset(new FAsyncTask<FNglAsyncFunc>([this]() { this->AsyncUpdateRelay(); }));
+		async_task_.Reset(new FAsyncTask<FAsyncFunc>([this]() { this->AsyncUpdateRelay(); }));
 	}
-	FNglAsyncTask::~FNglAsyncTask()
+	FAsyncTaskBase::~FAsyncTaskBase()
 	{
 		if (async_task_.IsValid())
 			async_task_->EnsureCompletion();
@@ -16,7 +16,7 @@ namespace ngl
 	}
 
 	// Asyncタスクが完了しているか.
-	bool FNglAsyncTask::IsDone() const
+	bool FAsyncTaskBase::IsDone() const
 	{
 		if (async_task_.IsValid())
 		{
@@ -26,7 +26,7 @@ namespace ngl
 	}
 
 	// Asyncタスクの完了を待機.
-	void FNglAsyncTask::WaitAsyncUpdate()
+	void FAsyncTaskBase::WaitAsyncUpdate()
 	{
 		if (async_task_.IsValid())
 		{
@@ -35,7 +35,7 @@ namespace ngl
 	}
 
 	// Asyncタスクを起動.
-	void FNglAsyncTask::StartAsyncUpdate(bool is_async)
+	void FAsyncTaskBase::StartAsyncUpdate(bool is_async)
 	{
 		if (!IsDone())
 			WaitAsyncUpdate();
@@ -47,7 +47,7 @@ namespace ngl
 	}
 
 	// 派生クラスの非同期実行関数を呼び出す.
-	void FNglAsyncTask::AsyncUpdateRelay()
+	void FAsyncTaskBase::AsyncUpdateRelay()
 	{
 		AsyncUpdate();
 	}

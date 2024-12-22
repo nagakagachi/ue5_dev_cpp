@@ -738,12 +738,12 @@ namespace ngl
 	//		Set()					:	指定したインデックス要素に指定のフラグを書き込み,階層ビットマスクを更新する.
 	//
 	template<typename ELEMENT_CONTAINER_TYPE = uint32_t>
-	class NglDynamicHierarchicalBitArray
+	class DynamicHierarchicalBitArray
 	{
 
 	public:
-		NglDynamicHierarchicalBitArray() {}
-		~NglDynamicHierarchicalBitArray() {}
+		DynamicHierarchicalBitArray() {}
+		~DynamicHierarchicalBitArray() {}
 
 
 		// 要素数を指定して初期化.
@@ -766,7 +766,7 @@ namespace ngl
 		uint32_t FindFirstZeroBit() const;
 
 		// 別の階層ビット配列からコピー.
-		void Copy(const NglDynamicHierarchicalBitArray& src);
+		void Copy(const DynamicHierarchicalBitArray& src);
 
 		// 階層ビット情報を更新する
 		// 最下層ビットを直接操作した後などに利用する.
@@ -829,7 +829,7 @@ namespace ngl
 
 
 	template<typename ELEMENT_CONTAINER_TYPE>
-	bool NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Initialize(unsigned int num)
+	bool DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Initialize(unsigned int num)
 	{
 		constant_param_.max_size_ = std::max(num, 2u);
 		// リクエストから計算されたコンテナ数
@@ -851,13 +851,13 @@ namespace ngl
 		return true;
 	}
 	template<typename ELEMENT_CONTAINER_TYPE>
-	void NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Fill(bool v)
+	void DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Fill(bool v)
 	{
 		const ELEMENT_CONTAINER_TYPE fill_v = (v) ? ~ELEMENT_CONTAINER_TYPE(0) : 0;
 		memset(data_.data(), fill_v, constant_param_.total_container_count_ * sizeof(ELEMENT_CONTAINER_TYPE));
 	}
 	template<typename ELEMENT_CONTAINER_TYPE>
-	constexpr bool NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Get(uint32_t i) const
+	constexpr bool DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Get(uint32_t i) const
 	{
 		const auto target_container = i >> k_container_size_in_bits_log2;
 		const auto leaf_bit = i & k_container_bit_mask;
@@ -867,7 +867,7 @@ namespace ngl
 	}
 	// 指定要素に真偽値を設定.
 	template<typename ELEMENT_CONTAINER_TYPE>
-	void NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Set(uint32_t i, bool v)
+	void DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Set(uint32_t i, bool v)
 	{
 		const auto target_container = i >> k_container_size_in_bits_log2;
 		const auto leaf_bit = i & k_container_bit_mask;
@@ -895,7 +895,7 @@ namespace ngl
 	// 先頭から最初に見つかるfalse要素インデックスを検索. false要素が存在しない場合は k_max_size 以上の値を返す.
 	// return value that greater than k_max_size when false-element is not found.
 	template<typename ELEMENT_CONTAINER_TYPE>
-	uint32_t NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::FindFirstZeroBit() const
+	uint32_t DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::FindFirstZeroBit() const
 	{
 		constexpr ELEMENT_CONTAINER_TYPE not_found_query = ~ELEMENT_CONTAINER_TYPE(0);
 
@@ -938,7 +938,7 @@ namespace ngl
 	}
 	// 別の階層ビット配列からコピー.
 	template<typename ELEMENT_CONTAINER_TYPE>
-	void NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Copy(const NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>& src)
+	void DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::Copy(const DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>& src)
 	{
 		// 最下層ビット部をコピー
 		auto* p_dst = &data_[CalcLevelContainerOffset(constant_param_.leaf_level_index_)];
@@ -963,7 +963,7 @@ namespace ngl
 	// 階層ビット全体を更新する
 	// コピー等で最下層ビットを直接操作した後などに利用する.
 	template<typename ELEMENT_CONTAINER_TYPE>
-	void NglDynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::RefreshHierarchy()
+	void DynamicHierarchicalBitArray<ELEMENT_CONTAINER_TYPE>::RefreshHierarchy()
 	{
 		if (0 < constant_param_.leaf_level_index_)
 		{
@@ -998,12 +998,12 @@ namespace ngl
 	//		Set()					:	指定したインデックス要素に指定のフラグを書き込み,階層ビットマスクを更新する.
 	//
 	template<unsigned int MAX_BIT_COUNT, typename ELEMENT_CONTAINER_TYPE = uint32_t>
-	class NglFixedHierarchicalBitArray
+	class FixedHierarchicalBitArray
 	{
 
 	public:
-		NglFixedHierarchicalBitArray() {}
-		~NglFixedHierarchicalBitArray() {}
+		FixedHierarchicalBitArray() {}
+		~FixedHierarchicalBitArray() {}
 
 		// 全要素を指定の真偽値でクリアする.
 		void Fill(bool v);
@@ -1081,12 +1081,12 @@ namespace ngl
 	};
 
 	template<unsigned int MAX_BIT_COUNT, typename ELEMENT_CONTAINER_TYPE>
-	void NglFixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::Fill(bool v)
+	void FixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::Fill(bool v)
 	{
 		data_.fill((v) ? ~ELEMENT_CONTAINER_TYPE(0) : 0);
 	}
 	template<unsigned int MAX_BIT_COUNT, typename ELEMENT_CONTAINER_TYPE>
-	constexpr bool NglFixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::Get(uint32_t i) const
+	constexpr bool FixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::Get(uint32_t i) const
 	{
 		const auto target_container = i >> k_container_size_in_bits_log2;
 		const auto leaf_bit = i & k_container_bit_mask;
@@ -1096,7 +1096,7 @@ namespace ngl
 	}
 	// 指定要素に真偽値を設定.
 	template<unsigned int MAX_BIT_COUNT, typename ELEMENT_CONTAINER_TYPE>
-	void NglFixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::Set(uint32_t i, bool v)
+	void FixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::Set(uint32_t i, bool v)
 	{
 		const auto target_container = i >> k_container_size_in_bits_log2;
 		const auto leaf_bit = i & k_container_bit_mask;
@@ -1124,7 +1124,7 @@ namespace ngl
 	// 先頭から最初に見つかるfalse要素インデックスを検索. false要素が存在しない場合は k_max_size 以上の値を返す.
 	// return value that greater than k_max_size when false-element is not found.
 	template<unsigned int MAX_BIT_COUNT, typename ELEMENT_CONTAINER_TYPE>
-	uint32_t NglFixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::FindFirstZeroBit() const
+	uint32_t FixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::FindFirstZeroBit() const
 	{
 		constexpr ELEMENT_CONTAINER_TYPE not_found_query = ~ELEMENT_CONTAINER_TYPE(0);
 
@@ -1168,7 +1168,7 @@ namespace ngl
 	// 階層ビット全体を更新する
 	// コピー等で最下層ビットを直接操作した後などに利用する.
 	template<unsigned int MAX_BIT_COUNT, typename ELEMENT_CONTAINER_TYPE>
-	void NglFixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::RefreshHierarchy()
+	void FixedHierarchicalBitArray<MAX_BIT_COUNT, ELEMENT_CONTAINER_TYPE>::RefreshHierarchy()
 	{
 		if (0 < k_leaf_level_index)
 		{
@@ -1199,7 +1199,7 @@ namespace ngl
 	//		必要に応じてページの拡張をする.
 	//		未使用要素の検索を階層ビット配列で高速に処理する.
 	template<typename COMPONENT_TYPE>
-	class NglPagedComponentAllocator
+	class PagedComponentAllocator
 	{
 	public:
 		using Handle = uint32_t;
@@ -1217,10 +1217,10 @@ namespace ngl
 		};
 
 	public:
-		NglPagedComponentAllocator()
+		PagedComponentAllocator()
 		{
 		}
-		~NglPagedComponentAllocator()
+		~PagedComponentAllocator()
 		{
 			Finalize();
 		}
@@ -1265,7 +1265,7 @@ namespace ngl
 			if (used_bits_.MaxSize() <= empty_index)
 			{
 				// 階層Bit配列を必要なサイズまで拡張
-				ngl::NglDynamicHierarchicalBitArray<> new_hb;
+				DynamicHierarchicalBitArray<> new_hb;
 				// 2倍のサイズを確保
 				new_hb.Initialize(used_bits_.MaxSize() * 2u);
 				// コピー
@@ -1458,7 +1458,7 @@ namespace ngl
 		uint32_t page_block_index_mask_ = 0;
 
 		// page要素の使用状態を表す階層ビット配列.
-		ngl::NglDynamicHierarchicalBitArray<> used_bits_;
+		DynamicHierarchicalBitArray<> used_bits_;
 		// Pageプール.
 		std::vector<Page*>	pool_;
 	};
@@ -1467,10 +1467,10 @@ namespace ngl
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	//	指定したバイトサイズでページ単位メモリ確保と高速な未使用要素検索を目的とするクラス.
-	//		NglPagedComponentAllocator のバイト列版.
+	//		PagedComponentAllocator のバイト列版.
 	//		必要に応じてページの拡張をする.
 	//		未使用要素の検索を階層ビット配列で高速に処理する.
-	class NglPagedMemoryAllocator
+	class PagedMemoryAllocator
 	{
 	public:
 		using Handle = uint32_t;
@@ -1488,10 +1488,10 @@ namespace ngl
 		};
 
 	public:
-		NglPagedMemoryAllocator()
+		PagedMemoryAllocator()
 		{
 		}
-		~NglPagedMemoryAllocator()
+		~PagedMemoryAllocator()
 		{
 			Finalize();
 		}
@@ -1535,7 +1535,7 @@ namespace ngl
 			if (used_bits_.MaxSize() <= empty_index)
 			{
 				// 階層Bit配列を必要なサイズまで拡張
-				ngl::NglDynamicHierarchicalBitArray<> new_hb;
+				DynamicHierarchicalBitArray<> new_hb;
 				// 2倍のサイズを確保
 				new_hb.Initialize(used_bits_.MaxSize() * 2u);
 				// コピー
@@ -1701,7 +1701,7 @@ namespace ngl
 		uint32_t page_block_index_mask_ = 0;
 
 		// page要素の使用状態を表す階層ビット配列.
-		ngl::NglDynamicHierarchicalBitArray<> used_bits_;
+		DynamicHierarchicalBitArray<> used_bits_;
 		// Pageプール.
 		std::vector<Page*>	pool_;
 	};

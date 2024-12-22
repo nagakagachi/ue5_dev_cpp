@@ -313,10 +313,10 @@ namespace ngl
 
 				if (nullptr == level_node_pool_[level])
 				{
-					level_node_pool_[level] = new NglPagedMemoryAllocator();
+					level_node_pool_[level] = new PagedMemoryAllocator();
 
-					NglPagedMemoryAllocator::Desc node_pool_desc;
-					// ノードプールの要素サイズは NglSparseVoxelTreeNodeHeaderの基本サイズにvalidchild_bitmask_headに続くビットフラグ配列分のサイズを足したもの.
+					PagedMemoryAllocator::Desc node_pool_desc;
+					// ノードプールの要素サイズは NodeHeaderの基本サイズにvalidchild_bitmask_headに続くビットフラグ配列分のサイズを足したもの.
 					node_pool_desc.block_byte_size = sizeof(SparseVoxelTreeNodeHeader) + node_body_append_byte_size;
 					node_pool_desc.block_count_per_page_log2 = page_size_log2;
 					level_node_pool_[level]->Initialize(node_pool_desc);
@@ -324,8 +324,8 @@ namespace ngl
 
 				if (nullptr == level_childlist_pool_[level])
 				{
-					level_childlist_pool_[level] = new NglPagedMemoryAllocator();
-					NglPagedMemoryAllocator::Desc node_pool_desc;
+					level_childlist_pool_[level] = new PagedMemoryAllocator();
+					PagedMemoryAllocator::Desc node_pool_desc;
 					node_pool_desc.block_byte_size = sizeof(SparseVoxelTreeNodeHandleType) * num_child;
 					node_pool_desc.block_count_per_page_log2 = page_size_log2;
 					level_childlist_pool_[level]->Initialize(node_pool_desc);
@@ -458,8 +458,8 @@ namespace ngl
 			}
 
 		private:
-			TArray<NglPagedMemoryAllocator*> level_node_pool_;
-			TArray<NglPagedMemoryAllocator*> level_childlist_pool_;
+			TArray<PagedMemoryAllocator*> level_node_pool_;
+			TArray<PagedMemoryAllocator*> level_childlist_pool_;
 		};
 
 
@@ -476,7 +476,7 @@ namespace ngl
 
 			// --------------------------------
 			// Initialize.
-			desc = NglSparseVoxelTreeMpmSystem::GetDefaultDesc();
+			desc = SparseVoxelTreeMpmSystem::GetDefaultDesc();
 			desc.voxel_size = 100.0f;
 			desc.debug_initial_density = 0.3f;
 			desc.debug_debug_elastic_lambda = 16.0f;
@@ -616,7 +616,7 @@ namespace ngl
 			SparseVoxelTreeNodePoolAllocator		pool_;
 			// Brickプール. ブロックがbrick一つ分のメモリ. 実際には並列化を考慮してbrickサイズの両側にエプロン部1セルを拡張した分で確保している.
 			// 4x4x4のbrickの場合、アロケーションは6x6x6セル分となる.
-			NglPagedComponentAllocator<FVector4>	mass_brick_pool_;
+			PagedComponentAllocator<FVector4>	mass_brick_pool_;
 
 			// ルートを含めた各レベルのノードの情報.
 			// 各レベルのノードの解像度情報や,そのレベルに所属するノードの総数情報.

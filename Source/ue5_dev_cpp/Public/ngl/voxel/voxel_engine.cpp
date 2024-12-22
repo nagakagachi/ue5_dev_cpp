@@ -28,8 +28,7 @@
 
 class ANglVoxelEngine;
 
-namespace ngl
-{
+
 	NglVoxelEngineAsyncTask::NglVoxelEngineAsyncTask()
 	{
 	}
@@ -77,7 +76,7 @@ namespace ngl
 		// Async更新関数呼び出し
 		owner_->AsyncUpdate();
 	}
-}
+
 
 	// ----------------------------------------------------------------------------------------------------------------
 	// ----------------------------------------------------------------------------------------------------------------
@@ -273,7 +272,7 @@ namespace ngl
 				assert(e.Value);
 
 				// Activeのみ対象(競合対策のためにLoading等は完了するまで待つ)
-				if (ngl::NglVoxelChunkState::Active != e.Value->GetState())
+				if (ngl::VoxelChunkState::Active != e.Value->GetState())
 					continue;
 
 				// Stream Out チャンクIDリストアップ
@@ -425,7 +424,7 @@ namespace ngl
 				// IDを設定
 				new_chunk->SetId(e);
 				// 状態を設定.
-				new_chunk->SetState(ngl::NglVoxelChunkState::Empty);
+				new_chunk->SetState(ngl::VoxelChunkState::Empty);
 			}
 		}
 		// Stream Out 情報をAsync側へ
@@ -499,7 +498,7 @@ namespace ngl
 							if (auto&& neightbor_chunk_ptr = voxel_chunk_map_.Find(neightbor_chunk_id))
 							{
 								const auto neightbor_chunk = *neightbor_chunk_ptr;
-								if (ngl::NglVoxelChunkState::Active == neightbor_chunk->GetState())
+								if (ngl::VoxelChunkState::Active == neightbor_chunk->GetState())
 								{
 									if (true)
 									{
@@ -573,7 +572,7 @@ namespace ngl
 			auto chunk = e.Value;
 
 			// ステートチェック
-			if (ngl::NglVoxelChunkState::Active != chunk->GetState())
+			if (ngl::VoxelChunkState::Active != chunk->GetState())
 				continue;
 
 			// ここではVoxelの更新はせず,エッジ部の変更状態から近傍チャンクの近傍更新フラグを変更する.
@@ -596,7 +595,7 @@ namespace ngl
 								if (auto&& neightbor_chunk_ptr = voxel_chunk_map_.Find(neightbor_chunk_id))
 								{
 									auto neightbor_chunk = *neightbor_chunk_ptr;
-									if (ngl::NglVoxelChunkState::Active == neightbor_chunk->GetState())
+									if (ngl::VoxelChunkState::Active == neightbor_chunk->GetState())
 									{
 										// 近傍チャンクの逆方向エッジにDirtyを通知.
 										neightbor_chunk->SetNeighborChunkChangeFlag(-ni, -nj, -nk);
@@ -620,7 +619,7 @@ namespace ngl
 			auto chunk = e.Value;
 
 			// ステートチェック
-			if (ngl::NglVoxelChunkState::Active != chunk->GetState())
+			if (ngl::VoxelChunkState::Active != chunk->GetState())
 				continue;
 
 			if (!chunk->GetAnyNeighborChunkChangeFlag())
@@ -684,14 +683,14 @@ namespace ngl
 				assert(nullptr != *chunk);
 
 				// ステート変更
-				chunk->SetState(ngl::NglVoxelChunkState::Unloading);
+				chunk->SetState(ngl::VoxelChunkState::Unloading);
 
 
 				// TODO. chunkをディスクに保存
 
 
 				// ステート変更
-				chunk->SetState(ngl::NglVoxelChunkState::Deletable);
+				chunk->SetState(ngl::VoxelChunkState::Deletable);
 
 				// メモリの解放やMapからの除去はメイン側で実行する.
 
@@ -742,12 +741,12 @@ namespace ngl
 					auto chunk = parallel_work_target[index];
 
 					// 状態遷移
-					chunk->SetState(ngl::NglVoxelChunkState::Allocating);
+					chunk->SetState(ngl::VoxelChunkState::Allocating);
 					// 内部メモリ確保
 					chunk->Allocate();
 
 					// ステート変更
-					chunk->SetState(ngl::NglVoxelChunkState::Loading);
+					chunk->SetState(ngl::VoxelChunkState::Loading);
 					chunk->Fill(false);// 念の為フィル
 					// デコード対象チャンクのデータがあるかどうかで分岐
 					if (false)
@@ -769,7 +768,7 @@ namespace ngl
 
 
 					// 生成が完了したらフラグ設定
-					chunk->SetState(ngl::NglVoxelChunkState::Active);
+					chunk->SetState(ngl::VoxelChunkState::Active);
 
 				}, false);
 
@@ -820,7 +819,7 @@ namespace ngl
 						//noise = 1.0f;
 					}
 #else
-					noise = ngl::NglVoxelNoise::Fbm<false>(cell_center_pos_world * default_chunk_gen_noise_scale, noise_octave_count).X;
+					noise = ngl::TestVoxelNoise::Fbm<false>(cell_center_pos_world * default_chunk_gen_noise_scale, noise_octave_count).X;
 
 					const float height_base = 1000.0f;
 					const float height_rate = FMath::Max(0.0f, ((cell_center_pos_world.Z) / height_base));
@@ -917,7 +916,7 @@ namespace ngl
 			auto&& find_chunk = *find_chunk_ptr;
 			assert(nullptr != find_chunk);
 
-			if (ngl::NglVoxelChunkState::Active != find_chunk->GetState())
+			if (ngl::VoxelChunkState::Active != find_chunk->GetState())
 				continue;
 
 			UProceduralMeshComponent* mesh_comp = nullptr;
@@ -1406,7 +1405,7 @@ namespace ngl
 			auto&& find_chunk = *find_chunk_ptr;
 			assert(nullptr != find_chunk);
 
-			if (ngl::NglVoxelChunkState::Active != find_chunk->GetState())
+			if (ngl::VoxelChunkState::Active != find_chunk->GetState())
 				continue;
 
 			UInstancedStaticMeshComponent* mesh_comp = nullptr;

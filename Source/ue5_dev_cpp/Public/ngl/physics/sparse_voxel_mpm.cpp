@@ -164,7 +164,7 @@ namespace ngl
 
 		// ------------------------------------------------------------------------------------------------------------------------
 		// ノードヘッダに対する操作ヘルパ
-		struct NglSparseVoxelTreeNodeHeaderHelper
+		struct SparseVoxelTreeNodeHeaderHelper
 		{
 			// 子ノードリストビット配列をクリア.
 			static void ClearChildBit(SparseVoxelTreeNodeHeader* node, uint32_t child_count_max)
@@ -244,7 +244,7 @@ namespace ngl
 
 				// 親ノードのchildlist内インデックスを計算.
 				const uint32_t local_cell_index = lx_ipos.X + (lx_ipos.Y << reso_log2) + (lx_ipos.Z << (reso_log2 + reso_log2));
-				if (NglSparseVoxelTreeNodeHeaderHelper::GetChildBit(cur_node, local_cell_index))
+				if (SparseVoxelTreeNodeHeaderHelper::GetChildBit(cur_node, local_cell_index))
 				{
 					// 子ノード取得
 					auto childlist = pool_.GetChildlist(cur_node->childlist_handle);
@@ -288,7 +288,7 @@ namespace ngl
 				// 親ノードのchildlist内インデックスを計算.
 				const uint32_t local_cell_index = lx_ipos.X + (lx_ipos.Y << reso_log2) + (lx_ipos.Z << (reso_log2 + reso_log2));
 
-				if (NglSparseVoxelTreeNodeHeaderHelper::GetChildBit(parent_node, local_cell_index))
+				if (SparseVoxelTreeNodeHeaderHelper::GetChildBit(parent_node, local_cell_index))
 				{
 					// 子ノード取得
 					auto childlist = pool_.GetChildlist(parent_node->childlist_handle);
@@ -332,7 +332,7 @@ namespace ngl
 					// 新規ノードセットアップ
 					{
 						// リセット.
-						NglSparseVoxelTreeNodeHeaderHelper::ResetNode(new_node, level_node_info_[l].node_child_count);
+						SparseVoxelTreeNodeHeaderHelper::ResetNode(new_node, level_node_info_[l].node_child_count);
 						new_node->level = l;
 						new_node->parent_handle = parent_handle;
 						new_node->build_marker = build_marker_;// 最新のビルドマーカーを設定.
@@ -346,7 +346,7 @@ namespace ngl
 						auto parent_childlist = pool_.GetChildlist(parent_node->childlist_handle);
 						parent_childlist[local_cell_index] = new_node_handle;
 						// 親の子ノードリストビット配列を更新.
-						NglSparseVoxelTreeNodeHeaderHelper::SetChildBit(parent_node, local_cell_index, true);
+						SparseVoxelTreeNodeHeaderHelper::SetChildBit(parent_node, local_cell_index, true);
 					}
 
 					parent_handle = new_node_handle;
@@ -372,10 +372,10 @@ namespace ngl
 
 				const auto local_cell_index = CalcChildIndex(parent_node, p_node);
 				check(parent_child_list[local_cell_index] == node_handle);
-				check(NglSparseVoxelTreeNodeHeaderHelper::GetChildBit(parent_node, local_cell_index));
+				check(SparseVoxelTreeNodeHeaderHelper::GetChildBit(parent_node, local_cell_index));
 
 				// 子ノードリストの該当インデックスを無効化
-				NglSparseVoxelTreeNodeHeaderHelper::SetChildBit(parent_node, local_cell_index, false);
+				SparseVoxelTreeNodeHeaderHelper::SetChildBit(parent_node, local_cell_index, false);
 
 				// 一応無効ハンドルを入れておく? ChildBitで管理されているので不要だが.
 				parent_child_list[local_cell_index] = SparseVoxelTreeNodeHandle::k_invalid;
@@ -476,7 +476,7 @@ namespace ngl
 					root_handle_ = pool_.AllocNode(0);
 					auto root = pool_.GetNode(root_handle_);
 					// ルートノードリセット.
-					NglSparseVoxelTreeNodeHeaderHelper::ResetNode(root, level_node_info_[0].node_child_count);
+					SparseVoxelTreeNodeHeaderHelper::ResetNode(root, level_node_info_[0].node_child_count);
 
 
 					// First Pass. パーティクル中心位置のみを追加.
@@ -648,7 +648,7 @@ namespace ngl
 					{
 						if (auto p_node = pool_.GetLevelNodeDirect(l, i))
 						{
-							if (!NglSparseVoxelTreeNodeHeaderHelper::AnyChildBit(p_node, level_node_info_[l].node_child_count))
+							if (!SparseVoxelTreeNodeHeaderHelper::AnyChildBit(p_node, level_node_info_[l].node_child_count))
 							{
 								// 子ノードが存在しないので破棄.
 								const auto node_handle = SparseVoxelTreeNodeHandle::Encode(0, p_node->level, i);
@@ -711,12 +711,8 @@ namespace ngl
 			const float elastic_mu = elastic_mu_;
 			const float initial_density = initial_density_;
 			const float initial_particle_volume = 1.0f / initial_density;
-
-
-
 			const float voxel_unit_size = level_node_info_[leaf_level_idx_].cell_world_size;
-
-
+			
 			auto	progress_time_start = std::chrono::system_clock::now();
 
 			// 近傍3x3x3セルに対する二次補間係数. 中心セルが (1,1,1) に対応し, position_rate_from_centerは所属セルの中心を原点とした割合位置[-0.5, 0.5].
@@ -732,9 +728,6 @@ namespace ngl
 				w_3[2] = FVector(0.5f) * FMath::Square(FVector(0.5f) + position_rate_from_center);
 			};
 
-
-
-		#if 1
 			// ExclusiveScanを利用してラスタライズをするバージョン.
 			const auto num_particle = position_list.Num();
 			const auto num_voxel_particle_list = leaf_voxel_particle_id_list_.Num();
@@ -843,20 +836,11 @@ namespace ngl
 									const auto raster_weight = cellw[bx].X * w_yz;
 
 									const auto dist_to_cell = (dist_to_cell_base + FVector(bx, by, bz));
-
-		#if 1
+									
 									const auto affine_momentum_vel = MulMatrix3x3(particle_affine_momentum, dist_to_cell);
-		#else
-									// デバッグ  一時的にAffineMomentum無効化
-									const auto affine_momentum_vel = FVector::ZeroVector;
-		#endif
 
-		#if 1
 									const auto deform_momentum = MulMatrix3x3(eq_16_term_0, dist_to_cell) / delta_sec;
-		#else
-									// デバッグ  一時的にDeformForce無効化
-									const auto deform_momentum = FVector::ZeroVector;
-		#endif
+
 									const auto raster_momentum = ((particle_vel + affine_momentum_vel) * particle_mass + deform_momentum);
 
 									p_brick[bi] += FVector4(raster_momentum.X, raster_momentum.Y, raster_momentum.Z, particle_mass) * raster_weight;
@@ -917,7 +901,7 @@ namespace ngl
 										p_brick[bi].Y *= inv_w;
 										p_brick[bi].Z *= inv_w;
 
-		#if 1
+									#if 1
 										// グリッド空間で重力
 										p_brick[bi].Z += -9.8f * delta_sec;
 
@@ -945,7 +929,7 @@ namespace ngl
 											if (debug_area_z_min >= world_vpos.Z || debug_area_z_max <= world_vpos.Z)
 												p_brick[bi].Z = 0.0f;
 										}
-		#endif
+									#endif
 									}
 								}
 							}
@@ -1124,19 +1108,19 @@ namespace ngl
 							}
 						}
 					};
-		#if 1
+				#if 1
 					// 並列実行. Ryzen7 3700X で 4倍程度高速.
 					ParallelFor(
 						num_leaf_node_max,
 						func_sync_brick_apron
 					);
-		#else
+				#else
 					// シングルスレッド版
 					for (auto i = 0u; i < num_leaf_node_max; ++i)
 					{
 						func_sync_brick_apron(i);
 					}
-		#endif
+				#endif
 				}
 			}
 
@@ -1178,7 +1162,7 @@ namespace ngl
 							if(k_debug_log)
 							{
 								// デバッグ
-							//	UE_LOG(LogTemp, Display, TEXT("\nBrick Base[%d] -> %f, %f, %f"),i, position_list[i].X, position_list[i].Y, position_list[i].Z);
+								//	UE_LOG(LogTemp, Display, TEXT("\nBrick Base[%d] -> %f, %f, %f"),i, position_list[i].X, position_list[i].Y, position_list[i].Z);
 							}
 
 							FVector gather_vel = FVector::ZeroVector;
@@ -1226,11 +1210,7 @@ namespace ngl
 									}
 								}
 							}
-
-
-
-
-
+							
 							// 速度.
 							velocity_list[i] = gather_vel * voxel_unit_size;// Gridの速度はGrid単位長さとなっているため変換.
 
@@ -1258,23 +1238,20 @@ namespace ngl
 					}
 				};
 
-		#if 1
+			#if 1
 				// 並列実行. Ryzen7 3700X で 4倍程度高速.
 				ParallelFor(
 					num_particle,
 					func_grid_2_particle
 				);
-		#else
+			#else
 				// シングルスレッド版
 				for (auto i = 0; i < num_particle; ++i)
 				{
 					func_grid_2_particle(i);
 				}
-		#endif
+			#endif
 				}
-
-		#else
-		#endif
 
 			if(k_debug_log)
 			{

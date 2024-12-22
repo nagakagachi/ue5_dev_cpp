@@ -146,7 +146,7 @@ namespace ngl
 
 			// 移動によるシフトコピーなどは後で.
 			grid_center_pos_ws_ = {};
-			grid_aabb_min_wgs_ = ngl::math::FVectorFloorToInt(grid_center_pos_ws_ * root_cell_width_inv_ - (k_root_grid_reso / 2.0f));
+			grid_aabb_min_wgs_ = math::FVectorFloorToInt(grid_center_pos_ws_ * root_cell_width_inv_ - (k_root_grid_reso / 2.0f));
 			grid_aabb_min_ws_ = FVector(grid_aabb_min_wgs_) * root_cell_width_;
 		
 			Reset();
@@ -169,7 +169,7 @@ namespace ngl
 		}
 		constexpr bool IsInner(const FIntVector cell) const
 		{
-			return ngl::math::IsInnerWithPositive(cell, FIntVector(k_root_grid_reso - 1));
+			return math::IsInnerWithPositive(cell, FIntVector(k_root_grid_reso - 1));
 		}
 		constexpr int CalcRootCellIndex(const FIntVector& root_cell_id) const
 		{
@@ -246,13 +246,13 @@ namespace ngl
 
 
 			// 0ベースでのトラバースCell範囲.
-			const FIntVector trace_begin_cell = ngl::math::FIntVectorMin(ngl::math::FVectorFloorToInt(ray_p0_clamped_c), grid_box_cell_max);
-			const FIntVector trace_end_cell = ngl::math::FIntVectorMin( ngl::math::FVectorFloorToInt(ray_p1_clamped_c), grid_box_cell_max);
-			const FIntVector trance_cell_range = ngl::math::FIntVectorAbs(trace_end_cell - trace_begin_cell);
+			const FIntVector trace_begin_cell = math::FIntVectorMin(math::FVectorFloorToInt(ray_p0_clamped_c), grid_box_cell_max);
+			const FIntVector trace_end_cell = math::FIntVectorMin( math::FVectorFloorToInt(ray_p1_clamped_c), grid_box_cell_max);
+			const FIntVector trance_cell_range = math::FIntVectorAbs(trace_end_cell - trace_begin_cell);
 
 
 			// 始点からの最初のステップt.
-			const FVector cell_delta_offset = ((ngl::math::FVectorFloor(ray_p0_clamped_c) + FVector::Max(dir_sign, FVector::ZeroVector) - ray_p0_clamped_c) * ray_dir_c_inv).GetAbs();
+			const FVector cell_delta_offset = ((math::FVectorFloor(ray_p0_clamped_c) + FVector::Max(dir_sign, FVector::ZeroVector) - ray_p0_clamped_c) * ray_dir_c_inv).GetAbs();
 
 			// トレースUniformパラメータ.
 			const GridRayTraceRayUniform ray_uniform(ray_p0_clamped_c, ray_d_c_len, ray_dir_c, ray_dir_c_inv);
@@ -284,7 +284,7 @@ namespace ngl
 					cell_delta_accum = cell_delta_offset + FVector(total_cell_step) * cell_delta;
 
 					// xyzで最小値コンポーネントを探す.
-					prev_cell_step = ngl::math::FVectorCompareLessEqual(cell_delta_accum, FVector::Min(FVector(cell_delta_accum.Y, cell_delta_accum.Z, cell_delta_accum.X), FVector(cell_delta_accum.Z, cell_delta_accum.X, cell_delta_accum.Y)));
+					prev_cell_step = math::FVectorCompareLessEqual(cell_delta_accum, FVector::Min(FVector(cell_delta_accum.Y, cell_delta_accum.Z, cell_delta_accum.X), FVector(cell_delta_accum.Z, cell_delta_accum.X, cell_delta_accum.Y)));
 					if constexpr (FINE_STEP_ON_DIAGONAL_CASE)
 					{
 						// 厳密にセルを巡回するために最小コンポーネントが複数あった場合に一つに制限する(XYZの順で優先.). 
@@ -349,7 +349,7 @@ namespace ngl
 		
 			// 移動によるシフトコピーなどは後で.
 			grid_center_pos_ws_ = {};
-			this->grid_aabb_min_wgs_ = ngl::math::FVectorFloorToInt(grid_center_pos_ws_ * root_cell_width_inv_ - (k_root_grid_reso / 2.0f));
+			this->grid_aabb_min_wgs_ = math::FVectorFloorToInt(grid_center_pos_ws_ * root_cell_width_inv_ - (k_root_grid_reso / 2.0f));
 			grid_aabb_min_ws_ = FVector(this->grid_aabb_min_wgs_) * root_cell_width_;
 
 			Reset();
@@ -372,7 +372,7 @@ namespace ngl
 		}
 		constexpr bool IsInner(const FIntVector cell) const
 		{
-			return ngl::math::IsInnerWithPositive(cell, FIntVector(k_root_grid_reso - 1));
+			return math::IsInnerWithPositive(cell, FIntVector(k_root_grid_reso - 1));
 		}
 		constexpr int CalcRootCellIndex(const FIntVector& root_cell_id) const
 		{
@@ -448,12 +448,12 @@ namespace ngl
 			const FVector ray_dir_inv = CalcSafeDirInverse(ray_dir);
 			const auto ray_len = ray_d_cellf.Length();
 
-			const FIntVector ray_begin_celli = ngl::math::FVectorFloorToInt(ray_p0_clamped_c);
+			const FIntVector ray_begin_celli = math::FVectorFloorToInt(ray_p0_clamped_c);
 
 			// ここまでの情報を元に第一象限方向への問題に変換する.
 			// 
 			// dir_sign方向でミラーリングした際の原点相当のCell. dir{-,+} の場合は {1, 0} となり, 元のCellの右側のCell位置を指す.
-			const FIntVector abs_base_celli = ray_begin_celli + ngl::math::FIntVectorMax(FIntVector::ZeroValue, ray_sign_i * (-1));
+			const FIntVector abs_base_celli = ray_begin_celli + math::FIntVectorMax(FIntVector::ZeroValue, ray_sign_i * (-1));
 			// ミラートレースベクトル.
 			const FVector abs_d_cellf = ray_d_cellf.GetAbs();
 			// ミラートレースベクトルの逆数(ゼロ除算対策付き).
@@ -467,7 +467,7 @@ namespace ngl
 			// 現在の深度の解像度からT値オフセットを再計算.
 			const auto CalcAbsTvalueOffset = [abs_ray_begin_cellf, abs_d_cellf_inv](int cur_toral_reso) -> FVector
 			{
-				return (ngl::math::FVectorFloor(abs_ray_begin_cellf * cur_toral_reso) + FVector::OneVector - abs_ray_begin_cellf * cur_toral_reso) * abs_d_cellf_inv / float(cur_toral_reso);
+				return (math::FVectorFloor(abs_ray_begin_cellf * cur_toral_reso) + FVector::OneVector - abs_ray_begin_cellf * cur_toral_reso) * abs_d_cellf_inv / float(cur_toral_reso);
 			};
 
 			// トレースUniformパラメータ.
@@ -531,7 +531,7 @@ namespace ngl
 						abs_cur_begin_celli = FIntVector(abs_ray_begin_cellf * total_reso_scale);// 正の領域なのでFloorより高速なInt変換で代用.
 
 						auto abs_tmp_cell = FIntVector((ray_dir.GetAbs() * cur_cell_delta * ray_len + abs_ray_begin_cellf) * total_reso_scale);// 正の領域なのでFloorより高速なInt変換で代用.
-						abs_tmp_cell = ngl::math::FIntVectorClamp(abs_tmp_cell, clamp_min, clamp_max);
+						abs_tmp_cell = math::FIntVectorClamp(abs_tmp_cell, clamp_min, clamp_max);
 
 						abs_total_cell_step = abs_tmp_cell - abs_cur_begin_celli;
 						abs_cur_range = clamp_max - abs_cur_begin_celli;
@@ -550,7 +550,7 @@ namespace ngl
 
 				// ---------------------------------------
 				// デルタからCell移動方向を計算するために最小値コンポーネントを探す.
-				abs_prev_cell_step = ngl::math::FVectorCompareLessEqual(abs_delta_accum_next, FVector::Min(FVector(abs_delta_accum_next.Y, abs_delta_accum_next.Z, abs_delta_accum_next.X), FVector(abs_delta_accum_next.Z, abs_delta_accum_next.X, abs_delta_accum_next.Y)));
+				abs_prev_cell_step = math::FVectorCompareLessEqual(abs_delta_accum_next, FVector::Min(FVector(abs_delta_accum_next.Y, abs_delta_accum_next.Z, abs_delta_accum_next.X), FVector(abs_delta_accum_next.Z, abs_delta_accum_next.X, abs_delta_accum_next.Y)));
 				if constexpr (FINE_STEP_ON_DIAGONAL_CASE)
 				{
 					// 厳密にセルを巡回するために最小コンポーネントが複数あった場合に一つに制限する(XYZの順で優先.). 
@@ -588,7 +588,7 @@ namespace ngl
 							auto tmp_global_trace_cell = (abs_total_cell_step + abs_cur_begin_celli) / ResolutionPerChildCell;
 							// 基準Cellを現在の深度に更新.
 							abs_cur_begin_celli = abs_cur_begin_celli / ResolutionPerChildCell;// 除算のみ.
-							abs_total_cell_step = ngl::math::FIntVectorAbs(tmp_global_trace_cell - abs_cur_begin_celli);
+							abs_total_cell_step = math::FIntVectorAbs(tmp_global_trace_cell - abs_cur_begin_celli);
 
 							// Cellレンジを現在の深度に更新. 深度0だけレンジが異なるので特別扱い.
 							if (0 == cur_depth)
@@ -861,7 +861,7 @@ namespace ngl
 
 				// サンプル位置のCell及びBrick書き込み.
 				const auto root_cell = bgrid_.WorldToRootGridSpace(std::get<0>(sample_ray_end_and_ishit[i]));
-				const auto root_cell_i = ngl::math::FVectorFloorToInt(root_cell);// 0をまたいで負の場合があるためint丸めでは丸め方向が一貫しないためFloor.
+				const auto root_cell_i = math::FVectorFloorToInt(root_cell);// 0をまたいで負の場合があるためint丸めでは丸め方向が一貫しないためFloor.
 				const auto root_cell_frac = root_cell - FVector(root_cell_i);
 				if (bgrid_.IsInner(root_cell_i))
 				{
@@ -958,7 +958,7 @@ namespace ngl
 					const auto hitpos_from_center_sign = hitpos_from_center.GetSignVector();
 					const auto hitpos_from_center_abs = hitpos_from_center.GetAbs();
 					// 中心からのベクトルで最大要素軸を法線として返す.
-					const auto hitpos_from_center_abs_max_cmp = ngl::math::FVectorCompareGreater(hitpos_from_center_abs,
+					const auto hitpos_from_center_abs_max_cmp = math::FVectorCompareGreater(hitpos_from_center_abs,
 						FVector::Max(FVector(hitpos_from_center_abs.Y, hitpos_from_center_abs.Z, hitpos_from_center_abs.X), FVector(hitpos_from_center_abs.Z, hitpos_from_center_abs.X, hitpos_from_center_abs.Y)));
 
 					const auto hit_normal = (FVector(hitpos_from_center_abs_max_cmp) * hitpos_from_center_sign).GetSafeNormal();// すべて等値でもSafeNormalで一応ベクトルが返る.
@@ -1017,7 +1017,7 @@ namespace ngl
 				const auto trace_pos_c = ray_uniform.ray_origin + ray_uniform.ray_length * ray_uniform.ray_dir * (visit_cell_param.ray_t);// float誤差で微小にセルの整数に届かない場合があるので注意.
 				// ヒット座標のCell内ローカル座標[0, 1]. float誤差で整数Cellに届いていない場合があるため clamp(0,1)を取っている点に注意.
 				// trace_pos_cはRootGrid空間であるため, 到達Cellの階層における解像度スケールを乗じて cell_id と同じ空間に持っていく.
-				const auto trace_pos_c_frac = ngl::math::FVectorClamp(trace_pos_c * visit_cell_param.resolution_per_root_cell - FVector(visit_cell_param.cell_id), FVector::ZeroVector, FVector::OneVector);
+				const auto trace_pos_c_frac = math::FVectorClamp(trace_pos_c * visit_cell_param.resolution_per_root_cell - FVector(visit_cell_param.cell_id), FVector::ZeroVector, FVector::OneVector);
 
 				const auto brick_aabb_t_min = (FVector::ZeroVector - trace_pos_c_frac) * ray_uniform.ray_dir_inv;
 				const auto brick_aabb_t_max = (FVector::OneVector - trace_pos_c_frac) * ray_uniform.ray_dir_inv;
@@ -1036,10 +1036,10 @@ namespace ngl
 				const auto dir_sign = ray_uniform.ray_dir.GetSignVector();
 				const auto delta = FVector::Min(dir_sign * brick_rd_inv, FVector::OneVector) * t_scale;
 
-				const auto begin_cell_pos = ngl::math::FVectorClamp(trace_pos_c_frac * k_brick_size, FVector::ZeroVector, FVector(k_brick_size - FLT_EPSILON));
-				const auto begin_cell = ngl::math::FIntVectorMin(FIntVector(k_brick_max_range), ngl::math::FVectorFloorToInt(begin_cell_pos));
-				const auto end_cell = ngl::math::FIntVectorMin(FIntVector(k_brick_max_range), ngl::math::FVectorFloorToInt(cell_out_frac * k_brick_size));
-				const auto cell_range = ngl::math::FIntVectorAbs(end_cell - begin_cell);
+				const auto begin_cell_pos = math::FVectorClamp(trace_pos_c_frac * k_brick_size, FVector::ZeroVector, FVector(k_brick_size - FLT_EPSILON));
+				const auto begin_cell = math::FIntVectorMin(FIntVector(k_brick_max_range), math::FVectorFloorToInt(begin_cell_pos));
+				const auto end_cell = math::FIntVectorMin(FIntVector(k_brick_max_range), math::FVectorFloorToInt(cell_out_frac * k_brick_size));
+				const auto cell_range = math::FIntVectorAbs(end_cell - begin_cell);
 				const auto t_max_base = ((FVector(begin_cell) + FVector::Max(dir_sign, FVector::ZeroVector) - begin_cell_pos) * brick_rd_inv).GetAbs() * t_scale;
 
 				float last_delta = 0.0f;
@@ -1073,7 +1073,7 @@ namespace ngl
 							const auto hitpos_from_center_sign = hitpos_from_center.GetSignVector();
 							const auto hitpos_from_center_abs = hitpos_from_center.GetAbs();
 							// 中心からのベクトルで最大要素軸を法線として返す.
-							const auto hitpos_from_center_abs_max_cmp = ngl::math::FVectorCompareGreater(hitpos_from_center_abs,
+							const auto hitpos_from_center_abs_max_cmp = math::FVectorCompareGreater(hitpos_from_center_abs,
 								FVector::Max(FVector(hitpos_from_center_abs.Y, hitpos_from_center_abs.Z, hitpos_from_center_abs.X), FVector(hitpos_from_center_abs.Z, hitpos_from_center_abs.X, hitpos_from_center_abs.Y)));
 
 							ray_payload.hit_normal = (FVector(hitpos_from_center_abs_max_cmp) * hitpos_from_center_sign).GetSafeNormal();// すべて等値でもSafeNormalで一応ベクトルが返る.
@@ -1085,7 +1085,7 @@ namespace ngl
 					// Next Step.
 					const auto next_t = t_max_base + FVector(total_step_cell) * delta;
 					// xyzで最小値コンポーネントを探す.
-					prev_step = ngl::math::FVectorCompareLessEqual(next_t, FVector::Min(FVector(next_t.Y, next_t.Z, next_t.X), FVector(next_t.Z, next_t.X, next_t.Y)));// Equal無しだとすべて等値だった場合に進行できないため.
+					prev_step = math::FVectorCompareLessEqual(next_t, FVector::Min(FVector(next_t.Y, next_t.Z, next_t.X), FVector(next_t.Z, next_t.X, next_t.Y)));// Equal無しだとすべて等値だった場合に進行できないため.
 					if constexpr (true)
 					{
 						// 厳密にセルを巡回するために最小コンポーネントが複数あった場合に一つに制限する(XYZの順で優先.). 
