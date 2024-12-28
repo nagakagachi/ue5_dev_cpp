@@ -16,6 +16,8 @@ public class ue5_dev_cpp : ModuleRules
 			"InputCore", 
 			"EnhancedInput",
 			
+			"RenderCore",	// for gpgpu.
+			"RHI",			// for gpgpu.
 			
 			"ProceduralMeshComponent", // for VoxelEngine.
 		});
