@@ -854,17 +854,17 @@ namespace naga
 
 			if (0 < num_leaf_voxel_ex_scan_kind)
 			{
-		#if 1
+#if 1
 				// 並列実行. Ryzen7 3700X で 4倍程度高速.
 				ParallelFor(
 					num_leaf_node_max,
 					func_rasterize
 				);
-		#else
+#else
 				// シングルスレッド版
 				for (auto i = 0u; i < num_leaf_node_max; ++i)
 					func_rasterize(i);
-		#endif
+#endif
 			}
 
 			// GridCell更新.
@@ -901,7 +901,7 @@ namespace naga
 										p_brick[bi].Y *= inv_w;
 										p_brick[bi].Z *= inv_w;
 
-									#if 1
+#if 1
 										// グリッド空間で重力
 										p_brick[bi].Z += -9.8f * delta_sec;
 
@@ -929,7 +929,7 @@ namespace naga
 											if (debug_area_z_min >= world_vpos.Z || debug_area_z_max <= world_vpos.Z)
 												p_brick[bi].Z = 0.0f;
 										}
-									#endif
+#endif
 									}
 								}
 							}
@@ -937,17 +937,17 @@ namespace naga
 
 					}
 				};
-		#if 1
+#if 1
 				// 並列実行. Ryzen7 3700X で 4倍程度高速.
 				ParallelFor(
 					num_leaf_node_max,
 					func_update_grid
 				);
-		#else
+#else
 				// シングルスレッド版
 				for (auto i = 0u; i < num_leaf_node_max; ++i)
 					func_update_grid(i);
-		#endif
+#endif
 			}
 
 			// Apron同期.
@@ -1108,19 +1108,19 @@ namespace naga
 							}
 						}
 					};
-				#if 1
+#if 1
 					// 並列実行. Ryzen7 3700X で 4倍程度高速.
 					ParallelFor(
 						num_leaf_node_max,
 						func_sync_brick_apron
 					);
-				#else
+#else
 					// シングルスレッド版
 					for (auto i = 0u; i < num_leaf_node_max; ++i)
 					{
 						func_sync_brick_apron(i);
 					}
-				#endif
+#endif
 				}
 			}
 
@@ -1206,7 +1206,7 @@ namespace naga
 									if(k_debug_log)
 									{
 										// デバッグ
-									//	UE_LOG(LogTemp, Display, TEXT("Brick: %f, %f, %f"), p_brick[bi_0yz].W, p_brick[bi_1yz].W, p_brick[bi_2yz].W);
+										//	UE_LOG(LogTemp, Display, TEXT("Brick: %f, %f, %f"), p_brick[bi_0yz].W, p_brick[bi_1yz].W, p_brick[bi_2yz].W);
 									}
 								}
 							}
@@ -1238,20 +1238,20 @@ namespace naga
 					}
 				};
 
-			#if 1
+#if 1
 				// 並列実行. Ryzen7 3700X で 4倍程度高速.
 				ParallelFor(
 					num_particle,
 					func_grid_2_particle
 				);
-			#else
+#else
 				// シングルスレッド版
 				for (auto i = 0; i < num_particle; ++i)
 				{
 					func_grid_2_particle(i);
 				}
-			#endif
-				}
+#endif
+			}
 
 			if(k_debug_log)
 			{
@@ -1275,10 +1275,9 @@ namespace naga
 						リーフノードの隣接リーフを何度も探索する場合は事前にリーフノードに格納しておいたほうが良さそう
 
 		*/
-	}
 
 
-	//--------------------------------------------------------------------------------------------------------------------------------------
+		//--------------------------------------------------------------------------------------------------------------------------------------
 	
 	
 	
@@ -1289,328 +1288,120 @@ namespace naga
 	
 	
 
-	//--------------------------------------------------------------------------------------------------------------------------------------
-	// MPM参考実装の検証.
-	// https://nialltl.neocities.org/articles/mpm_guide.html
-	//--------------------------------------------------------------------------------------------------------------------------------------
-	static FMatrix GetZeroMatrix()
-	{
-		FMatrix tmp;
-		const auto n0 = std::size(tmp.M);
-		const auto n1 = std::size(tmp.M[0]);
-		auto p = &tmp.M[0][0];
-		for (int i = 0; i < n0 * n1; ++i)
+		//--------------------------------------------------------------------------------------------------------------------------------------
+		// MPM参考実装の検証.
+		// https://nialltl.neocities.org/articles/mpm_guide.html
+		//--------------------------------------------------------------------------------------------------------------------------------------
+		static FMatrix GetZeroMatrix()
 		{
-			p[i] = 0.0f;
-		}
-		return tmp;
-	};
-	static FMatrix2x2 GetZeroMatrix2x2()
-	{
-		FMatrix2x2 tmp{ 0.0f, 0.0f , 0.0f , 0.0f };
-		return tmp;
-	};
-	static FMatrix2x2 TransposeMatrix2x2(const FMatrix2x2& m)
-	{
-		float a, b, c, d;
-		m.GetMatrix(a, b, c, d);
-		FMatrix2x2 tmp{ a, c, b, d };
-		return tmp;
-	};
-	static FMatrix2x2 SubtractMatrix2x2(const FMatrix2x2& m0, const FMatrix2x2& m1)
-	{
-		float a0, b0, c0, d0;
-		m0.GetMatrix(a0, b0, c0, d0);
-		float a1, b1, c1, d1;
-		m1.GetMatrix(a1, b1, c1, d1);
-		FMatrix2x2 tmp{ a0 - a1, b0 - b1, c0 - c1, d0 - d1 };
-		return tmp;
-	};
-	static FMatrix2x2 AddMatrix2x2(const FMatrix2x2& m0, const FMatrix2x2& m1)
-	{
-		float a0, b0, c0, d0;
-		m0.GetMatrix(a0, b0, c0, d0);
-		float a1, b1, c1, d1;
-		m1.GetMatrix(a1, b1, c1, d1);
-		FMatrix2x2 tmp{ a0 + a1, b0 + b1, c0 + c1, d0 + d1 };
-		return tmp;
-	};
-	static FMatrix2x2 MulMatrix2x2(const FMatrix2x2& m0, float v)
-	{
-		float a0, b0, c0, d0;
-		m0.GetMatrix(a0, b0, c0, d0);
-		FMatrix2x2 tmp{ a0 * v, b0 * v, c0 * v, d0 * v };
-		return tmp;
-	};
-	static FVector2D MulMatrix2x2(const FMatrix2x2& m0, const FVector2D& v)
-	{
-		float a0, b0, c0, d0;
-		m0.GetMatrix(a0, b0, c0, d0);
-
-		return FVector2D(a0 * v.X + b0 * v.Y, c0 * v.X + d0 * v.Y);
-	};
-	static FMatrix2x2 MulMatrix2x2(const FMatrix2x2& m0, const FMatrix2x2& m1)
-	{
-		float a0, b0, c0, d0;
-		m0.GetMatrix(a0, b0, c0, d0);
-		float a1, b1, c1, d1;
-		m1.GetMatrix(a1, b1, c1, d1);
-
-		FMatrix2x2 tmp{ a0 * a1 + b0 * c1, a0 * b1 + b0 * d1, c0 * a1 + d0 * c1, c0 * b1 + d0 * d1 };
-		return tmp;
-	};
-	static float TraceMatrix2x2(const FMatrix2x2& m0)
-	{
-		float a0, b0, c0, d0;
-		m0.GetMatrix(a0, b0, c0, d0);
-		return a0 + d0;
-	};
-
-
-	bool MlsMpm2d_Base::Initialize(int grid_reso_x, int grid_reso_y)
-	{
-		static const int grid_rezo_z = 1;
-		// grid reso should be larger then 3.
-		grid_reso_ = FIntVector(std::max(grid_reso_x, 3), std::max(grid_reso_y, 3), grid_rezo_z);
-
-		int num_cell = (grid_reso_.X) * (grid_reso_.Y) * (grid_reso_.Z);
-		grid_param_.SetNumUninitialized(num_cell);
-
-		return true;
-	}
-	void MlsMpm2d_Base::AddParticle(const FVector2D& pos, const FVector2D& vel)
-	{
-		static const auto ZeroMatrix = GetZeroMatrix2x2();
-
-
-		Particle p;
-		p.mass_ = 1.0f;
-		p.pos_ = pos;
-		p.vel_ = vel;
-		p.affine_momentum_ = ZeroMatrix;
-
-		particle_.Push(p);
-	}
-	void MlsMpm2d_Base::AdvanceSimulation(float delta_sec)
-	{
-		auto FuncQuadraticInterpolationWeights = [](const FVector2D& cell_diff, FVector2D* w_3)
+			FMatrix tmp;
+			const auto n0 = std::size(tmp.M);
+			const auto n1 = std::size(tmp.M[0]);
+			auto p = &tmp.M[0][0];
+			for (int i = 0; i < n0 * n1; ++i)
+			{
+				p[i] = 0.0f;
+			}
+			return tmp;
+		};
+		static FMatrix2x2 GetZeroMatrix2x2()
 		{
-			w_3[0] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) - cell_diff);
-			w_3[1] = FVector2D(0.75f) - FMath::Square(cell_diff);
-			w_3[2] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) + cell_diff);
+			FMatrix2x2 tmp{ 0.0f, 0.0f , 0.0f , 0.0f };
+			return tmp;
+		};
+		static FMatrix2x2 TransposeMatrix2x2(const FMatrix2x2& m)
+		{
+			float a, b, c, d;
+			m.GetMatrix(a, b, c, d);
+			FMatrix2x2 tmp{ a, c, b, d };
+			return tmp;
+		};
+		static FMatrix2x2 SubtractMatrix2x2(const FMatrix2x2& m0, const FMatrix2x2& m1)
+		{
+			float a0, b0, c0, d0;
+			m0.GetMatrix(a0, b0, c0, d0);
+			float a1, b1, c1, d1;
+			m1.GetMatrix(a1, b1, c1, d1);
+			FMatrix2x2 tmp{ a0 - a1, b0 - b1, c0 - c1, d0 - d1 };
+			return tmp;
+		};
+		static FMatrix2x2 AddMatrix2x2(const FMatrix2x2& m0, const FMatrix2x2& m1)
+		{
+			float a0, b0, c0, d0;
+			m0.GetMatrix(a0, b0, c0, d0);
+			float a1, b1, c1, d1;
+			m1.GetMatrix(a1, b1, c1, d1);
+			FMatrix2x2 tmp{ a0 + a1, b0 + b1, c0 + c1, d0 + d1 };
+			return tmp;
+		};
+		static FMatrix2x2 MulMatrix2x2(const FMatrix2x2& m0, float v)
+		{
+			float a0, b0, c0, d0;
+			m0.GetMatrix(a0, b0, c0, d0);
+			FMatrix2x2 tmp{ a0 * v, b0 * v, c0 * v, d0 * v };
+			return tmp;
+		};
+		static FVector2D MulMatrix2x2(const FMatrix2x2& m0, const FVector2D& v)
+		{
+			float a0, b0, c0, d0;
+			m0.GetMatrix(a0, b0, c0, d0);
+
+			return FVector2D(a0 * v.X + b0 * v.Y, c0 * v.X + d0 * v.Y);
+		};
+		static FMatrix2x2 MulMatrix2x2(const FMatrix2x2& m0, const FMatrix2x2& m1)
+		{
+			float a0, b0, c0, d0;
+			m0.GetMatrix(a0, b0, c0, d0);
+			float a1, b1, c1, d1;
+			m1.GetMatrix(a1, b1, c1, d1);
+
+			FMatrix2x2 tmp{ a0 * a1 + b0 * c1, a0 * b1 + b0 * d1, c0 * a1 + d0 * c1, c0 * b1 + d0 * d1 };
+			return tmp;
+		};
+		static float TraceMatrix2x2(const FMatrix2x2& m0)
+		{
+			float a0, b0, c0, d0;
+			m0.GetMatrix(a0, b0, c0, d0);
+			return a0 + d0;
 		};
 
 
-		const float dt = delta_sec;
-		const auto gravity = FVector2D(0.0f, -9.8f) * 1.0f;
-
-		// Clear Cell
+		bool MlsMpm2d_Base::Initialize(int grid_reso_x, int grid_reso_y)
 		{
-			static const Cell ZeroCell = Cell::Zero();
-			for (auto&& e : grid_param_)
-				e = ZeroCell;
+			static const int grid_rezo_z = 1;
+			// grid reso should be larger then 3.
+			grid_reso_ = FIntVector(std::max(grid_reso_x, 3), std::max(grid_reso_y, 3), grid_rezo_z);
+
+			int num_cell = (grid_reso_.X) * (grid_reso_.Y) * (grid_reso_.Z);
+			grid_param_.SetNumUninitialized(num_cell);
+
+			return true;
 		}
-
-		// P2G
+		void MlsMpm2d_Base::AddParticle(const FVector2D& pos, const FVector2D& vel)
 		{
-			FVector2D weights[3];
+			static const auto ZeroMatrix = GetZeroMatrix2x2();
 
-			for (const auto& p : particle_)
+
+			Particle p;
+			p.mass_ = 1.0f;
+			p.pos_ = pos;
+			p.vel_ = vel;
+			p.affine_momentum_ = ZeroMatrix;
+
+			particle_.Push(p);
+		}
+		void MlsMpm2d_Base::AdvanceSimulation(float delta_sec)
+		{
+			auto FuncQuadraticInterpolationWeights = [](const FVector2D& cell_diff, FVector2D* w_3)
 			{
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0.0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
-
-				// for all surrounding 9 cells (2D)
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-
-						FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-
-						const auto affine_mat = p.affine_momentum_;
-						//FVector2D Q = affine_mat.TransformVector(cell_dist);
-						FVector2D Q = MulMatrix2x2(affine_mat, cell_dist);
-
-						// MPM course, equation 172
-						float mass_contrib = weight * p.mass_;
-
-						// converting 2D index to 1D
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-						Cell& cell = grid_param_[cell_index];
-
-						// scatter mass to the grid
-						cell.mass_ += mass_contrib;
-
-						cell.vel_ += mass_contrib * (p.vel_ + Q);
-
-						// note: currently "cell.v" refers to MOMENTUM, not velocity!
-						// this gets corrected in the UpdateGrid step below.
-					}
-				}
-			}
-		}
-
-		// Update Cell
-		{
-			for (int i = 0; i < grid_param_.Num(); ++i)
-			{
-				auto& cell = grid_param_[i];
-
-				if (0.0f < cell.mass_)
-				{
-					// convert momentum to velocity, apply gravity
-					cell.vel_ /= cell.mass_;
-					cell.vel_ += dt * gravity;
-
-					// boundary conditions
-					int y = i / grid_reso_.X;
-					int x = i - y * grid_reso_.X;
-					if (x < 2 || x > grid_reso_.X - 3) { cell.vel_.X = 0; }
-					if (y < 2 || y > grid_reso_.Y - 3) { cell.vel_.Y = 0; }
-
-				}
-			}
-		}
-
-		// G2P
-		{
-			FVector2D weights[3];
-			for (auto& p : particle_)
-			{
-				// reset velocity
-				p.vel_ = FVector2D::ZeroVector;
-
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
+				w_3[0] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) - cell_diff);
+				w_3[1] = FVector2D(0.75f) - FMath::Square(cell_diff);
+				w_3[2] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) + cell_diff);
+			};
 
 
-				// constructing affine per-particle momentum matrix from APIC / MLS-MPM.
-				// see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
-				// below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
-				// where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
-				FMatrix2x2 B = GetZeroMatrix2x2();
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-
-						FVector2D dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-						FVector2D weighted_velocity = grid_param_[cell_index].vel_ * weight;
-
-						// APIC paper equation 10, constructing inner term for B
-						const auto c0 = weighted_velocity * dist.X;
-						const auto c1 = weighted_velocity * dist.Y;
-
-						//B. += term;
-						float m00, m01, m10, m11;
-						B.GetMatrix(m00, m01, m10, m11);
-						m00 += c0.X;
-						m01 += c0.Y;
-						m10 += c1.X;
-						m11 += c1.Y;
-						B = FMatrix2x2(m00, m01, m10, m11);
-
-
-						p.vel_ += weighted_velocity;
-					}
-				}
-				//p.affine_momentum_ = B * 4.0f;
-				{
-					float m00, m01, m10, m11;
-					B.GetMatrix(m00, m01, m10, m11);
-					p.affine_momentum_ = FMatrix2x2(m00 * 4.0f, m01 * 4.0f, m10 * 4.0f, m11 * 4.0f);
-				}
-
-				// advect particles
-				p.pos_ += p.vel_ * dt;
-
-				// safety clamp to ensure particles don't exit simulation domain
-				p.pos_.X = FMath::Clamp(p.pos_.X, 1.0f, grid_reso_.X - 2.0f);
-				p.pos_.Y = FMath::Clamp(p.pos_.Y, 1.0f, grid_reso_.Y - 2.0f);
-
-			}
-		}
-	}
-	// テスト用のパーティクルセットアップ
-	void MlsMpm2d_Base::SetupTestParticle()
-	{
-		FVector2D center = FVector2D(grid_reso_.X, grid_reso_.Y) * 0.5f;
-		{
-			const float spacing = 1.0f;
-			const int box_x = 16, box_y = 16;
-			const float sx = grid_reso_.X / 2.0f, sy = grid_reso_.Y / 2.0f;
-			for (float i = sx - box_x / 2; i < sx + box_x / 2; i += spacing) {
-				for (float j = sy - box_y / 2; j < sy + box_y / 2; j += spacing) {
-					auto pos = FVector2D(i, j);
-					auto vel = FVector2D(FMath::FRand() * 2.0f - 1.0f, FMath::FRand() + 2.75f) * 6.0f;
-					AddParticle(pos, vel);
-				}
-			}
-		}
-	}
-
-
-	//--------------------------------------------------------------------------------------------------------------------------------------
-	bool MlsMpm2d_Elastic::Initialize(int grid_reso_x, int grid_reso_y)
-	{
-		static const int grid_rezo_z = 1;
-		// grid reso should be larger then 3.
-		grid_reso_ = FIntVector(std::max(grid_reso_x, 3), std::max(grid_reso_y, 3), grid_rezo_z);
-
-		int num_cell = (grid_reso_.X) * (grid_reso_.Y) * (grid_reso_.Z);
-		grid_param_.SetNumUninitialized(num_cell);
-
-		return true;
-	}
-	void MlsMpm2d_Elastic::AddParticle(const FVector2D& pos, const FVector2D& vel)
-	{
-		static const auto ZeroMatrix = GetZeroMatrix2x2();
-
-
-		Particle p;
-		p.mass_ = 1.0f;
-		p.pos_ = pos;
-		p.vel_ = vel;
-		p.affine_momentum_ = ZeroMatrix;
-		p.initial_volume_ = 0.0f;
-
-		particle_.Push(p);
-
-		particle_deform_grad_.Push(FMatrix2x2());// Identity
-	}
-	void MlsMpm2d_Elastic::AdvanceSimulation(float delta_sec)
-	{
-		auto FuncQuadraticInterpolationWeights = [](const FVector2D& cell_diff, FVector2D* w_3)
-		{
-			w_3[0] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) - cell_diff);
-			w_3[1] = FVector2D(0.75f) - FMath::Square(cell_diff);
-			w_3[2] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) + cell_diff);
-		};
-
-		const float dt = delta_sec;
-		const auto gravity = FVector2D(0.0f, -9.8f) * 1.0f;
-
-		const float elastic_lambda = 10.0f;
-		const float elastic_mu = 3.0f;
-
-		if (is_first_frame_)
-		{
-			// 初回に初期体積計算.
-			is_first_frame_ = false;
+			const float dt = delta_sec;
+			const auto gravity = FVector2D(0.0f, -9.8f) * 1.0f;
 
 			// Clear Cell
 			{
@@ -1618,7 +1409,8 @@ namespace naga
 				for (auto&& e : grid_param_)
 					e = ZeroCell;
 			}
-			// 質量Scatter
+
+			// P2G
 			{
 				FVector2D weights[3];
 
@@ -1636,27 +1428,594 @@ namespace naga
 						for (int gy = 0; gy < 3; ++gy)
 						{
 							float weight = weights[gx].X * weights[gy].Y;
+
 							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+
 							FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+
+							const auto affine_mat = p.affine_momentum_;
+							//FVector2D Q = affine_mat.TransformVector(cell_dist);
+							FVector2D Q = MulMatrix2x2(affine_mat, cell_dist);
+
 							// MPM course, equation 172
 							float mass_contrib = weight * p.mass_;
 
 							// converting 2D index to 1D
 							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
 							Cell& cell = grid_param_[cell_index];
+
 							// scatter mass to the grid
 							cell.mass_ += mass_contrib;
+
+							cell.vel_ += mass_contrib * (p.vel_ + Q);
+
+							// note: currently "cell.v" refers to MOMENTUM, not velocity!
+							// this gets corrected in the UpdateGrid step below.
 						}
 					}
 				}
 			}
-			// 初期体積を計算
+
+			// Update Cell
+			{
+				for (int i = 0; i < grid_param_.Num(); ++i)
+				{
+					auto& cell = grid_param_[i];
+
+					if (0.0f < cell.mass_)
+					{
+						// convert momentum to velocity, apply gravity
+						cell.vel_ /= cell.mass_;
+						cell.vel_ += dt * gravity;
+
+						// boundary conditions
+						int y = i / grid_reso_.X;
+						int x = i - y * grid_reso_.X;
+						if (x < 2 || x > grid_reso_.X - 3) { cell.vel_.X = 0; }
+						if (y < 2 || y > grid_reso_.Y - 3) { cell.vel_.Y = 0; }
+
+					}
+				}
+			}
+
+			// G2P
 			{
 				FVector2D weights[3];
 				for (auto& p : particle_)
 				{
 					// reset velocity
-					//p.vel_ = FVector2D::ZeroVector;
+					p.vel_ = FVector2D::ZeroVector;
+
+					// quadratic interpolation weights
+					FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
+					FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+					FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+
+					// constructing affine per-particle momentum matrix from APIC / MLS-MPM.
+					// see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
+					// below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
+					// where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
+					FMatrix2x2 B = GetZeroMatrix2x2();
+					for (int gx = 0; gx < 3; ++gx)
+					{
+						for (int gy = 0; gy < 3; ++gy)
+						{
+							float weight = weights[gx].X * weights[gy].Y;
+
+							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+
+							FVector2D dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+							FVector2D weighted_velocity = grid_param_[cell_index].vel_ * weight;
+
+							// APIC paper equation 10, constructing inner term for B
+							const auto c0 = weighted_velocity * dist.X;
+							const auto c1 = weighted_velocity * dist.Y;
+
+							//B. += term;
+							float m00, m01, m10, m11;
+							B.GetMatrix(m00, m01, m10, m11);
+							m00 += c0.X;
+							m01 += c0.Y;
+							m10 += c1.X;
+							m11 += c1.Y;
+							B = FMatrix2x2(m00, m01, m10, m11);
+
+
+							p.vel_ += weighted_velocity;
+						}
+					}
+					//p.affine_momentum_ = B * 4.0f;
+					{
+						float m00, m01, m10, m11;
+						B.GetMatrix(m00, m01, m10, m11);
+						p.affine_momentum_ = FMatrix2x2(m00 * 4.0f, m01 * 4.0f, m10 * 4.0f, m11 * 4.0f);
+					}
+
+					// advect particles
+					p.pos_ += p.vel_ * dt;
+
+					// safety clamp to ensure particles don't exit simulation domain
+					p.pos_.X = FMath::Clamp(p.pos_.X, 1.0f, grid_reso_.X - 2.0f);
+					p.pos_.Y = FMath::Clamp(p.pos_.Y, 1.0f, grid_reso_.Y - 2.0f);
+
+				}
+			}
+		}
+		// テスト用のパーティクルセットアップ
+		void MlsMpm2d_Base::SetupTestParticle()
+		{
+			FVector2D center = FVector2D(grid_reso_.X, grid_reso_.Y) * 0.5f;
+			{
+				const float spacing = 1.0f;
+				const int box_x = 16, box_y = 16;
+				const float sx = grid_reso_.X / 2.0f, sy = grid_reso_.Y / 2.0f;
+				for (float i = sx - box_x / 2; i < sx + box_x / 2; i += spacing) {
+					for (float j = sy - box_y / 2; j < sy + box_y / 2; j += spacing) {
+						auto pos = FVector2D(i, j);
+						auto vel = FVector2D(FMath::FRand() * 2.0f - 1.0f, FMath::FRand() + 2.75f) * 6.0f;
+						AddParticle(pos, vel);
+					}
+				}
+			}
+		}
+
+
+		//--------------------------------------------------------------------------------------------------------------------------------------
+		bool MlsMpm2d_Elastic::Initialize(int grid_reso_x, int grid_reso_y)
+		{
+			static const int grid_rezo_z = 1;
+			// grid reso should be larger then 3.
+			grid_reso_ = FIntVector(std::max(grid_reso_x, 3), std::max(grid_reso_y, 3), grid_rezo_z);
+
+			int num_cell = (grid_reso_.X) * (grid_reso_.Y) * (grid_reso_.Z);
+			grid_param_.SetNumUninitialized(num_cell);
+
+			return true;
+		}
+		void MlsMpm2d_Elastic::AddParticle(const FVector2D& pos, const FVector2D& vel)
+		{
+			static const auto ZeroMatrix = GetZeroMatrix2x2();
+
+
+			Particle p;
+			p.mass_ = 1.0f;
+			p.pos_ = pos;
+			p.vel_ = vel;
+			p.affine_momentum_ = ZeroMatrix;
+			p.initial_volume_ = 0.0f;
+
+			particle_.Push(p);
+
+			particle_deform_grad_.Push(FMatrix2x2());// Identity
+		}
+		void MlsMpm2d_Elastic::AdvanceSimulation(float delta_sec)
+		{
+			auto FuncQuadraticInterpolationWeights = [](const FVector2D& cell_diff, FVector2D* w_3)
+			{
+				w_3[0] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) - cell_diff);
+				w_3[1] = FVector2D(0.75f) - FMath::Square(cell_diff);
+				w_3[2] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) + cell_diff);
+			};
+
+			const float dt = delta_sec;
+			const auto gravity = FVector2D(0.0f, -9.8f) * 1.0f;
+
+			const float elastic_lambda = 10.0f;
+			const float elastic_mu = 3.0f;
+
+			if (is_first_frame_)
+			{
+				// 初回に初期体積計算.
+				is_first_frame_ = false;
+
+				// Clear Cell
+				{
+					static const Cell ZeroCell = Cell::Zero();
+					for (auto&& e : grid_param_)
+						e = ZeroCell;
+				}
+				// 質量Scatter
+				{
+					FVector2D weights[3];
+
+					for (const auto& p : particle_)
+					{
+						// quadratic interpolation weights
+						FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0.0);
+						FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+						FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+						// for all surrounding 9 cells (2D)
+						for (int gx = 0; gx < 3; ++gx)
+						{
+							for (int gy = 0; gy < 3; ++gy)
+							{
+								float weight = weights[gx].X * weights[gy].Y;
+								FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+								FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+								// MPM course, equation 172
+								float mass_contrib = weight * p.mass_;
+
+								// converting 2D index to 1D
+								int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+								Cell& cell = grid_param_[cell_index];
+								// scatter mass to the grid
+								cell.mass_ += mass_contrib;
+							}
+						}
+					}
+				}
+				// 初期体積を計算
+				{
+					FVector2D weights[3];
+					for (auto& p : particle_)
+					{
+						// reset velocity
+						//p.vel_ = FVector2D::ZeroVector;
+
+						// quadratic interpolation weights
+						FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
+						FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+						FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+						float density = 0.0f;
+						for (int gx = 0; gx < 3; ++gx)
+						{
+							for (int gy = 0; gy < 3; ++gy)
+							{
+								float weight = weights[gx].X * weights[gy].Y;
+
+								FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+								int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+
+								density += grid_param_[cell_index].mass_ * weight;
+							}
+						}
+						p.initial_volume_ = p.mass_ / density;// 初期体積.
+					}
+				}
+			}
+
+
+			// Clear Cell
+			{
+				static const Cell ZeroCell = Cell::Zero();
+				for (auto&& e : grid_param_)
+					e = ZeroCell;
+			}
+
+			// P2G
+			{
+				FVector2D weights[3];
+
+
+				for (int pi = 0; pi < particle_.Num(); ++pi)
+				{
+					const auto& p = particle_[pi];
+
+
+					FMatrix2x2 stress = GetZeroMatrix2x2();
+
+					FMatrix2x2 F = particle_deform_grad_[pi];
+
+					float J = F.Determinant();
+
+					float volume = p.initial_volume_ * J;
+
+
+					// useful matrices for Neo-Hookean model
+					auto F_T = TransposeMatrix2x2(F);
+					auto F_inv_T = F_T.Inverse();
+					auto F_minus_F_inv_T = SubtractMatrix2x2(F, F_inv_T);
+
+					// MPM course equation 48
+					auto P_term_0 = MulMatrix2x2(F_minus_F_inv_T, elastic_mu);
+					auto P_term_1 = MulMatrix2x2(F_inv_T, elastic_lambda * FMath::Loge(J));
+					auto P = AddMatrix2x2(P_term_0, P_term_1);
+
+					// cauchy_stress = (1 / det(F)) * P * F_T
+					// equation 38, MPM course
+					stress = MulMatrix2x2(MulMatrix2x2(P, F_T), (1.0f / J));
+
+					// (M_p)^-1 = 4, see APIC paper and MPM course page 42
+					// this term is used in MLS-MPM paper eq. 16. with quadratic weights, Mp = (1/4) * (delta_x)^2.
+					// in this simulation, delta_x = 1, because i scale the rendering of the domain rather than the domain itself.
+					// we multiply by dt as part of the process of fusing the momentum and force update for MLS-MPM
+					auto eq_16_term_0 = MulMatrix2x2(stress, -volume * 4 * dt);
+
+
+					// quadratic interpolation weights
+					FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0.0);
+					FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+					FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+					// for all surrounding 9 cells (2D)
+					for (int gx = 0; gx < 3; ++gx)
+					{
+						for (int gy = 0; gy < 3; ++gy)
+						{
+							float weight = weights[gx].X * weights[gy].Y;
+
+							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+
+							FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+
+							const auto affine_mat = p.affine_momentum_;
+							//FVector2D Q = affine_mat.TransformVector(cell_dist);
+							FVector2D Q = MulMatrix2x2(affine_mat, cell_dist);
+
+
+							// MPM course, equation 172
+							float mass_contrib = weight * p.mass_;
+
+							// converting 2D index to 1D
+							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+							Cell& cell = grid_param_[cell_index];
+
+							// scatter mass to the grid
+							cell.mass_ += mass_contrib;
+
+							cell.vel_ += mass_contrib * (p.vel_ + Q);
+
+							// fused force/momentum update from MLS-MPM
+							// see MLS-MPM paper, equation listed after eqn. 28
+							//FVector2D momentum = MulMatrix2x2(MulMatrix2x2(eq_16_term_0, weight), cell_dist);
+							FVector2D momentum = MulMatrix2x2(MulMatrix2x2(eq_16_term_0, weight), cell_dist) / dt;// dt除算追加. 元実装ではデルタタイム1だったため,本来はdtで除する必要があると思われる.
+							cell.vel_ += momentum;
+
+
+							// total update on cell.v is now:
+							// weight * (dt * M^-1 * p.volume * p.stress + p.mass * p.C)
+							// this is the fused momentum + force from MLS-MPM. however, instead of our stress being derived from the energy density,
+							// i use the weak form with cauchy stress. converted:
+							// p.volume_0 * (dΨ/dF)(Fp)*(Fp_transposed)
+							// is equal to p.volume * σ
+
+							// note: currently "cell.v" refers to MOMENTUM, not velocity!
+							// this gets converted in the UpdateGrid step below.
+						}
+					}
+				}
+			}
+
+			// Update Cell
+			{
+				for (int i = 0; i < grid_param_.Num(); ++i)
+				{
+					auto& cell = grid_param_[i];
+
+					if (0.0f < cell.mass_)
+					{
+						// convert momentum to velocity, apply gravity
+						cell.vel_ /= cell.mass_;
+						cell.vel_ += dt * gravity;
+
+						// boundary conditions
+						int y = i / grid_reso_.X;
+						int x = i - y * grid_reso_.X;
+						if (x < 2 || x > grid_reso_.X - 3) { cell.vel_.X = 0; }
+						if (y < 2 || y > grid_reso_.Y - 3) { cell.vel_.Y = 0; }
+
+					}
+				}
+			}
+
+			// G2P
+			{
+				FVector2D weights[3];
+				for (int pi = 0; pi < particle_.Num(); ++pi)
+				{
+					auto& p = particle_[pi];
+
+					// reset velocity
+					p.vel_ = FVector2D::ZeroVector;
+
+					// quadratic interpolation weights
+					FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
+					FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+					FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+
+					// constructing affine per-particle momentum matrix from APIC / MLS-MPM.
+					// see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
+					// below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
+					// where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
+					FMatrix2x2 B = GetZeroMatrix2x2();
+					for (int gx = 0; gx < 3; ++gx)
+					{
+						for (int gy = 0; gy < 3; ++gy)
+						{
+							float weight = weights[gx].X * weights[gy].Y;
+
+							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+
+							FVector2D dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+							FVector2D weighted_velocity = grid_param_[cell_index].vel_ * weight;
+
+							// APIC paper equation 10, constructing inner term for B
+							const auto c0 = weighted_velocity * dist.X;
+							const auto c1 = weighted_velocity * dist.Y;
+							B = AddMatrix2x2(B, FMatrix2x2(c0.X, c1.X, c0.Y, c1.Y));
+
+							p.vel_ += weighted_velocity;
+						}
+					}
+					//p.affine_momentum_ = B * 4.0f;
+					{
+						float m00, m01, m10, m11;
+						B.GetMatrix(m00, m01, m10, m11);
+						p.affine_momentum_ = MulMatrix2x2(FMatrix2x2(m00, m01, m10, m11), 4.0f);
+					}
+
+					// advect particles
+					p.pos_ += p.vel_ * dt;
+
+					// safety clamp to ensure particles don't exit simulation domain
+					p.pos_.X = FMath::Clamp(p.pos_.X, 1.0f, grid_reso_.X - 2.0f);
+					p.pos_.Y = FMath::Clamp(p.pos_.Y, 1.0f, grid_reso_.Y - 2.0f);
+
+
+					// deformation gradient update - MPM course, equation 181
+					// Fp' = (I + dt * p.C) * Fp
+					auto Fp_new = FMatrix2x2();// Identity
+					Fp_new = AddMatrix2x2(Fp_new, MulMatrix2x2(p.affine_momentum_, dt));
+					particle_deform_grad_[pi] = MulMatrix2x2(Fp_new, particle_deform_grad_[pi]);
+
+				}
+			}
+		}
+		// テスト用のパーティクルセットアップ
+		void MlsMpm2d_Elastic::SetupTestParticle()
+		{
+			FVector2D center = FVector2D(grid_reso_.X, grid_reso_.Y) * 0.5f;
+
+			AddParticle(FVector2D(center.X, 10), FVector2D(0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 1.0f, 10), FVector2D(0.0f, -5.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 2.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 3.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 4.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 6.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 7.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 8.0f, 10), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10), FVector2D(0.0f, 0.0f));
+
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 1.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 2.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 3.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 4.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 5.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
+
+			AddParticle(FVector2D(center.X + 0.5f * 6.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 7.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 8.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
+
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 1.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 2.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 3.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 4.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 5.0f), FVector2D(0.0f, 0.0f));
+			AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
+
+		}
+		//--------------------------------------------------------------------------------------------------------------------------------------
+
+		//--------------------------------------------------------------------------------------------------------------------------------------
+		bool MlsMpm2d_Fluid::Initialize(int grid_reso_x, int grid_reso_y)
+		{
+			static const int grid_rezo_z = 1;
+			// grid reso should be larger then 3.
+			grid_reso_ = FIntVector(std::max(grid_reso_x, 3), std::max(grid_reso_y, 3), grid_rezo_z);
+
+			int num_cell = (grid_reso_.X) * (grid_reso_.Y) * (grid_reso_.Z);
+			grid_param_.SetNumUninitialized(num_cell);
+
+			return true;
+		}
+		void MlsMpm2d_Fluid::AddParticle(const FVector2D& pos, const FVector2D& vel)
+		{
+			static const auto ZeroMatrix = GetZeroMatrix2x2();
+
+
+			Particle p;
+			p.mass_ = 1.0f;
+			p.pos_ = pos;
+			p.vel_ = vel;
+			p.affine_momentum_ = ZeroMatrix;
+
+			particle_.Push(p);
+		}
+		void MlsMpm2d_Fluid::AdvanceSimulation(float delta_sec)
+		{
+			auto FuncQuadraticInterpolationWeights = [](const FVector2D& cell_diff, FVector2D* w_3)
+			{
+				w_3[0] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) - cell_diff);
+				w_3[1] = FVector2D(0.75f) - FMath::Square(cell_diff);
+				w_3[2] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) + cell_diff);
+			};
+
+			const float dt = delta_sec;
+			const auto gravity = FVector2D(0.0f, -9.8f) * 1.0f;
+
+			// fluid parameters
+			const float rest_density = 4.0f;//4.0f;
+			const float dynamic_viscosity = 0.05f;//0.1f;
+			// equation of state
+			const float eos_stiffness = 50.0f;//10.0f;
+			const float eos_power = 4;//4.0f;
+
+
+			// Clear Cell
+			{
+				static const Cell ZeroCell = Cell::Zero();
+				for (auto&& e : grid_param_)
+					e = ZeroCell;
+			}
+
+			// P2G
+			{
+				FVector2D weights[3];
+
+				for (int pi = 0; pi < particle_.Num(); ++pi)
+				{
+					const auto& p = particle_[pi];
+
+					// quadratic interpolation weights
+					FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0.0);
+					FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+					FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+					const auto affine_mat = p.affine_momentum_;
+
+					// for all surrounding 9 cells (2D)
+					for (int gx = 0; gx < 3; ++gx)
+					{
+						for (int gy = 0; gy < 3; ++gy)
+						{
+							float weight = weights[gx].X * weights[gy].Y;
+
+							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+
+							FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+
+							//FVector2D Q = affine_mat.TransformVector(cell_dist);
+							FVector2D Q = MulMatrix2x2(affine_mat, cell_dist);
+
+							// MPM course, equation 172
+							float mass_contrib = weight * p.mass_;
+
+							// converting 2D index to 1D
+							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+							Cell& cell = grid_param_[cell_index];
+
+							// scatter mass to the grid
+							cell.mass_ += mass_contrib;
+
+							cell.vel_ += mass_contrib * (p.vel_ + Q);
+						}
+					}
+				}
+			}
+
+			// P2G Second
+			{
+				FVector2D weights[3];
+
+				for (auto& p : particle_)
+				{
+					// reset velocity
+					p.vel_ = FVector2D::ZeroVector;
 
 					// quadratic interpolation weights
 					FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
@@ -1677,521 +2036,161 @@ namespace naga
 							density += grid_param_[cell_index].mass_ * weight;
 						}
 					}
-					p.initial_volume_ = p.mass_ / density;// 初期体積.
+					float volume = p.mass_ / density;// 体積.
+
+
+
+					// end goal, constitutive equation for isotropic fluid: 
+					// stress = -pressure * I + viscosity * (velocity_gradient + velocity_gradient_transposed)
+
+					// Tait equation of state. i clamped it as a bit of a hack.
+					// clamping helps prevent particles absorbing into each other with negative pressures
+					float pressure = FMath::Max(-0.1f, eos_stiffness * (FMath::Pow(density / rest_density, eos_power) - 1.0f));
+
+					auto stress = FMatrix2x2(
+						-pressure, 0,
+						0, -pressure
+					);
+
+					// velocity gradient - CPIC eq. 17, where deriv of quadratic polynomial is linear
+					const auto dudv = p.affine_momentum_;
+					auto strain = dudv;
+
+					//float trace = strain.c1.x + strain.c0.y;
+					float trace = TraceMatrix2x2(TransposeMatrix2x2(strain));
+					//strain.c0.y = strain.c1.x = trace;
+					{
+						float m00, m01, m10, m11;
+						strain.GetMatrix(m00, m01, m10, m11);
+						strain = FMatrix2x2(m00, trace, trace, m11);
+						// Newtonian fluidでは反対角成分ii成分とjj成分も2倍のはずなので修正.
+						//strain = FMatrix2x2(m00 + m00, trace, trace, m11 + m11);
+					}
+
+
+					auto viscosity_term = MulMatrix2x2(strain, dynamic_viscosity);
+					//stress += viscosity_term;
+					stress = AddMatrix2x2(stress, viscosity_term);
+
+					//const auto eq_16_term_0 = -volume * 4 * stress * dt;
+					const auto eq_16_term_0 = MulMatrix2x2(stress, -volume * 4.0f * dt);
+
+					for (int gx = 0; gx < 3; ++gx)
+					{
+						for (int gy = 0; gy < 3; ++gy)
+						{
+							float weight = weights[gx].X * weights[gy].Y;
+
+							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+
+							FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+
+							// fused force + momentum contribution from MLS-MPM
+							//FVector2D momentum = math.mul(eq_16_term_0 * weight, cell_dist);
+							FVector2D momentum = MulMatrix2x2(MulMatrix2x2(eq_16_term_0, weight), cell_dist);
+
+							grid_param_[cell_index].vel_ += momentum;
+						}
+					}
+				}
+			}
+
+			// Update Cell
+			{
+				for (int i = 0; i < grid_param_.Num(); ++i)
+				{
+					auto& cell = grid_param_[i];
+
+					if (0.0f < cell.mass_)
+					{
+						// convert momentum to velocity, apply gravity
+						cell.vel_ /= cell.mass_;
+						cell.vel_ += dt * gravity;
+
+						// boundary conditions
+						int y = i / grid_reso_.X;
+						int x = i - y * grid_reso_.X;
+						if (x < 2 || x > grid_reso_.X - 3) { cell.vel_.X = 0; }
+						if (y < 2 || y > grid_reso_.Y - 3) { cell.vel_.Y = 0; }
+
+					}
+				}
+			}
+
+			// G2P
+			{
+				FVector2D weights[3];
+				for (int pi = 0; pi < particle_.Num(); ++pi)
+				{
+					auto& p = particle_[pi];
+
+					// reset velocity
+					p.vel_ = FVector2D::ZeroVector;
+
+					// quadratic interpolation weights
+					FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
+					FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
+
+					FuncQuadraticInterpolationWeights(cell_diff, weights);
+
+					// constructing affine per-particle momentum matrix from APIC / MLS-MPM.
+					// see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
+					// below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
+					// where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
+					FMatrix2x2 B = GetZeroMatrix2x2();
+					for (int gx = 0; gx < 3; ++gx)
+					{
+						for (int gy = 0; gy < 3; ++gy)
+						{
+							float weight = weights[gx].X * weights[gy].Y;
+
+							FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
+							int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
+
+							FVector2D dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
+							FVector2D weighted_velocity = grid_param_[cell_index].vel_ * weight;
+
+							// APIC paper equation 10, constructing inner term for B
+							const auto c0 = weighted_velocity * dist.X;
+							const auto c1 = weighted_velocity * dist.Y;
+							B = AddMatrix2x2(B, FMatrix2x2(c0.X, c1.X, c0.Y, c1.Y));
+
+							p.vel_ += weighted_velocity;
+						}
+					}
+					//p.affine_momentum_ = B * 4.0f;
+					{
+						float m00, m01, m10, m11;
+						B.GetMatrix(m00, m01, m10, m11);
+						p.affine_momentum_ = MulMatrix2x2(FMatrix2x2(m00, m01, m10, m11), 4.0f);
+					}
+
+					// advect particles
+					p.pos_ += p.vel_ * dt;
+
+					// safety clamp to ensure particles don't exit simulation domain
+					p.pos_.X = FMath::Clamp(p.pos_.X, 1.0f, grid_reso_.X - 2.0f);
+					p.pos_.Y = FMath::Clamp(p.pos_.Y, 1.0f, grid_reso_.Y - 2.0f);
 				}
 			}
 		}
-
-
-		// Clear Cell
+		// テスト用のパーティクルセットアップ
+		void MlsMpm2d_Fluid::SetupTestParticle()
 		{
-			static const Cell ZeroCell = Cell::Zero();
-			for (auto&& e : grid_param_)
-				e = ZeroCell;
-		}
-
-		// P2G
-		{
-			FVector2D weights[3];
-
-
-			for (int pi = 0; pi < particle_.Num(); ++pi)
+			FVector2D center = FVector2D(grid_reso_.X, grid_reso_.Y) * 0.5f;
 			{
-				const auto& p = particle_[pi];
-
-
-				FMatrix2x2 stress = GetZeroMatrix2x2();
-
-				FMatrix2x2 F = particle_deform_grad_[pi];
-
-				float J = F.Determinant();
-
-				float volume = p.initial_volume_ * J;
-
-
-				// useful matrices for Neo-Hookean model
-				auto F_T = TransposeMatrix2x2(F);
-				auto F_inv_T = F_T.Inverse();
-				auto F_minus_F_inv_T = SubtractMatrix2x2(F, F_inv_T);
-
-				// MPM course equation 48
-				auto P_term_0 = MulMatrix2x2(F_minus_F_inv_T, elastic_mu);
-				auto P_term_1 = MulMatrix2x2(F_inv_T, elastic_lambda * FMath::Loge(J));
-				auto P = AddMatrix2x2(P_term_0, P_term_1);
-
-				// cauchy_stress = (1 / det(F)) * P * F_T
-				// equation 38, MPM course
-				stress = MulMatrix2x2(MulMatrix2x2(P, F_T), (1.0f / J));
-
-				// (M_p)^-1 = 4, see APIC paper and MPM course page 42
-				// this term is used in MLS-MPM paper eq. 16. with quadratic weights, Mp = (1/4) * (delta_x)^2.
-				// in this simulation, delta_x = 1, because i scale the rendering of the domain rather than the domain itself.
-				// we multiply by dt as part of the process of fusing the momentum and force update for MLS-MPM
-				auto eq_16_term_0 = MulMatrix2x2(stress, -volume * 4 * dt);
-
-
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0.0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
-
-				// for all surrounding 9 cells (2D)
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-
-						FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-
-						const auto affine_mat = p.affine_momentum_;
-						//FVector2D Q = affine_mat.TransformVector(cell_dist);
-						FVector2D Q = MulMatrix2x2(affine_mat, cell_dist);
-
-
-						// MPM course, equation 172
-						float mass_contrib = weight * p.mass_;
-
-						// converting 2D index to 1D
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-						Cell& cell = grid_param_[cell_index];
-
-						// scatter mass to the grid
-						cell.mass_ += mass_contrib;
-
-						cell.vel_ += mass_contrib * (p.vel_ + Q);
-
-						// fused force/momentum update from MLS-MPM
-						// see MLS-MPM paper, equation listed after eqn. 28
-						//FVector2D momentum = MulMatrix2x2(MulMatrix2x2(eq_16_term_0, weight), cell_dist);
-						FVector2D momentum = MulMatrix2x2(MulMatrix2x2(eq_16_term_0, weight), cell_dist) / dt;// dt除算追加. 元実装ではデルタタイム1だったため,本来はdtで除する必要があると思われる.
-						cell.vel_ += momentum;
-
-
-					// total update on cell.v is now:
-					// weight * (dt * M^-1 * p.volume * p.stress + p.mass * p.C)
-					// this is the fused momentum + force from MLS-MPM. however, instead of our stress being derived from the energy density,
-					// i use the weak form with cauchy stress. converted:
-					// p.volume_0 * (dΨ/dF)(Fp)*(Fp_transposed)
-					// is equal to p.volume * σ
-
-					// note: currently "cell.v" refers to MOMENTUM, not velocity!
-					// this gets converted in the UpdateGrid step below.
+				const float spacing = 0.5f;
+				const int box_x = 16, box_y = 16;
+				const float sx = grid_reso_.X / 2.0f, sy = grid_reso_.Y / 2.0f;
+				for (float i = sx - box_x / 2; i < sx + box_x / 2; i += spacing) {
+					for (float j = sy - box_y / 2; j < sy + box_y / 2; j += spacing) {
+						auto pos = FVector2D(i, j);
+						auto vel = FVector2D::ZeroVector; //FVector2D(FMath::FRand() * 2.0f - 1.0f, FMath::FRand() + 2.75f) * 6.0f;
+						AddParticle(pos, vel);
 					}
 				}
 			}
 		}
-
-		// Update Cell
-		{
-			for (int i = 0; i < grid_param_.Num(); ++i)
-			{
-				auto& cell = grid_param_[i];
-
-				if (0.0f < cell.mass_)
-				{
-					// convert momentum to velocity, apply gravity
-					cell.vel_ /= cell.mass_;
-					cell.vel_ += dt * gravity;
-
-					// boundary conditions
-					int y = i / grid_reso_.X;
-					int x = i - y * grid_reso_.X;
-					if (x < 2 || x > grid_reso_.X - 3) { cell.vel_.X = 0; }
-					if (y < 2 || y > grid_reso_.Y - 3) { cell.vel_.Y = 0; }
-
-				}
-			}
-		}
-
-		// G2P
-		{
-			FVector2D weights[3];
-			for (int pi = 0; pi < particle_.Num(); ++pi)
-			{
-				auto& p = particle_[pi];
-
-				// reset velocity
-				p.vel_ = FVector2D::ZeroVector;
-
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
-
-
-				// constructing affine per-particle momentum matrix from APIC / MLS-MPM.
-				// see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
-				// below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
-				// where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
-				FMatrix2x2 B = GetZeroMatrix2x2();
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-
-						FVector2D dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-						FVector2D weighted_velocity = grid_param_[cell_index].vel_ * weight;
-
-						// APIC paper equation 10, constructing inner term for B
-						const auto c0 = weighted_velocity * dist.X;
-						const auto c1 = weighted_velocity * dist.Y;
-						B = AddMatrix2x2(B, FMatrix2x2(c0.X, c1.X, c0.Y, c1.Y));
-
-						p.vel_ += weighted_velocity;
-					}
-				}
-				//p.affine_momentum_ = B * 4.0f;
-				{
-					float m00, m01, m10, m11;
-					B.GetMatrix(m00, m01, m10, m11);
-					p.affine_momentum_ = MulMatrix2x2(FMatrix2x2(m00, m01, m10, m11), 4.0f);
-				}
-
-				// advect particles
-				p.pos_ += p.vel_ * dt;
-
-				// safety clamp to ensure particles don't exit simulation domain
-				p.pos_.X = FMath::Clamp(p.pos_.X, 1.0f, grid_reso_.X - 2.0f);
-				p.pos_.Y = FMath::Clamp(p.pos_.Y, 1.0f, grid_reso_.Y - 2.0f);
-
-
-				// deformation gradient update - MPM course, equation 181
-				// Fp' = (I + dt * p.C) * Fp
-				auto Fp_new = FMatrix2x2();// Identity
-				Fp_new = AddMatrix2x2(Fp_new, MulMatrix2x2(p.affine_momentum_, dt));
-				particle_deform_grad_[pi] = MulMatrix2x2(Fp_new, particle_deform_grad_[pi]);
-
-			}
-		}
 	}
-	// テスト用のパーティクルセットアップ
-	void MlsMpm2d_Elastic::SetupTestParticle()
-	{
-		FVector2D center = FVector2D(grid_reso_.X, grid_reso_.Y) * 0.5f;
-
-		AddParticle(FVector2D(center.X, 10), FVector2D(0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 1.0f, 10), FVector2D(0.0f, -5.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 2.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 3.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 4.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 6.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 7.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 8.0f, 10), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10), FVector2D(0.0f, 0.0f));
-
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 1.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 2.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 3.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 4.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 5.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 5.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
-
-		AddParticle(FVector2D(center.X + 0.5f * 6.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 7.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 8.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
-
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 1.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 2.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 3.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 4.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 5.0f), FVector2D(0.0f, 0.0f));
-		AddParticle(FVector2D(center.X + 0.5f * 9.0f, 10.0f + 0.5 * 6.0f), FVector2D(0.0f, 0.0f));
-
-	}
-	//--------------------------------------------------------------------------------------------------------------------------------------
-
-	//--------------------------------------------------------------------------------------------------------------------------------------
-	bool MlsMpm2d_Fluid::Initialize(int grid_reso_x, int grid_reso_y)
-	{
-		static const int grid_rezo_z = 1;
-		// grid reso should be larger then 3.
-		grid_reso_ = FIntVector(std::max(grid_reso_x, 3), std::max(grid_reso_y, 3), grid_rezo_z);
-
-		int num_cell = (grid_reso_.X) * (grid_reso_.Y) * (grid_reso_.Z);
-		grid_param_.SetNumUninitialized(num_cell);
-
-		return true;
-	}
-	void MlsMpm2d_Fluid::AddParticle(const FVector2D& pos, const FVector2D& vel)
-	{
-		static const auto ZeroMatrix = GetZeroMatrix2x2();
-
-
-		Particle p;
-		p.mass_ = 1.0f;
-		p.pos_ = pos;
-		p.vel_ = vel;
-		p.affine_momentum_ = ZeroMatrix;
-
-		particle_.Push(p);
-	}
-	void MlsMpm2d_Fluid::AdvanceSimulation(float delta_sec)
-	{
-		auto FuncQuadraticInterpolationWeights = [](const FVector2D& cell_diff, FVector2D* w_3)
-		{
-			w_3[0] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) - cell_diff);
-			w_3[1] = FVector2D(0.75f) - FMath::Square(cell_diff);
-			w_3[2] = FVector2D(0.5f) * FMath::Square(FVector2D(0.5f) + cell_diff);
-		};
-
-		const float dt = delta_sec;
-		const auto gravity = FVector2D(0.0f, -9.8f) * 1.0f;
-
-		// fluid parameters
-		const float rest_density = 4.0f;//4.0f;
-		const float dynamic_viscosity = 0.05f;//0.1f;
-		// equation of state
-		const float eos_stiffness = 50.0f;//10.0f;
-		const float eos_power = 4;//4.0f;
-
-
-		// Clear Cell
-		{
-			static const Cell ZeroCell = Cell::Zero();
-			for (auto&& e : grid_param_)
-				e = ZeroCell;
-		}
-
-		// P2G
-		{
-			FVector2D weights[3];
-
-			for (int pi = 0; pi < particle_.Num(); ++pi)
-			{
-				const auto& p = particle_[pi];
-
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0.0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
-
-				const auto affine_mat = p.affine_momentum_;
-
-				// for all surrounding 9 cells (2D)
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-
-						FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-
-						//FVector2D Q = affine_mat.TransformVector(cell_dist);
-						FVector2D Q = MulMatrix2x2(affine_mat, cell_dist);
-
-						// MPM course, equation 172
-						float mass_contrib = weight * p.mass_;
-
-						// converting 2D index to 1D
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-						Cell& cell = grid_param_[cell_index];
-
-						// scatter mass to the grid
-						cell.mass_ += mass_contrib;
-
-						cell.vel_ += mass_contrib * (p.vel_ + Q);
-					}
-				}
-			}
-		}
-
-		// P2G Second
-		{
-			FVector2D weights[3];
-
-			for (auto& p : particle_)
-			{
-				// reset velocity
-				p.vel_ = FVector2D::ZeroVector;
-
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
-
-				float density = 0.0f;
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-
-						density += grid_param_[cell_index].mass_ * weight;
-					}
-				}
-				float volume = p.mass_ / density;// 体積.
-
-
-
-				// end goal, constitutive equation for isotropic fluid: 
-				// stress = -pressure * I + viscosity * (velocity_gradient + velocity_gradient_transposed)
-
-				// Tait equation of state. i clamped it as a bit of a hack.
-				// clamping helps prevent particles absorbing into each other with negative pressures
-				float pressure = FMath::Max(-0.1f, eos_stiffness * (FMath::Pow(density / rest_density, eos_power) - 1.0f));
-
-				auto stress = FMatrix2x2(
-					-pressure, 0,
-					0, -pressure
-				);
-
-				// velocity gradient - CPIC eq. 17, where deriv of quadratic polynomial is linear
-				const auto dudv = p.affine_momentum_;
-				auto strain = dudv;
-
-				//float trace = strain.c1.x + strain.c0.y;
-				float trace = TraceMatrix2x2(TransposeMatrix2x2(strain));
-				//strain.c0.y = strain.c1.x = trace;
-				{
-					float m00, m01, m10, m11;
-					strain.GetMatrix(m00, m01, m10, m11);
-					strain = FMatrix2x2(m00, trace, trace, m11);
-					// Newtonian fluidでは反対角成分ii成分とjj成分も2倍のはずなので修正.
-					//strain = FMatrix2x2(m00 + m00, trace, trace, m11 + m11);
-				}
-
-
-				auto viscosity_term = MulMatrix2x2(strain, dynamic_viscosity);
-				//stress += viscosity_term;
-				stress = AddMatrix2x2(stress, viscosity_term);
-
-				//const auto eq_16_term_0 = -volume * 4 * stress * dt;
-				const auto eq_16_term_0 = MulMatrix2x2(stress, -volume * 4.0f * dt);
-
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-
-						FVector2D cell_dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-
-						// fused force + momentum contribution from MLS-MPM
-						//FVector2D momentum = math.mul(eq_16_term_0 * weight, cell_dist);
-						FVector2D momentum = MulMatrix2x2(MulMatrix2x2(eq_16_term_0, weight), cell_dist);
-
-						grid_param_[cell_index].vel_ += momentum;
-					}
-				}
-			}
-		}
-
-		// Update Cell
-		{
-			for (int i = 0; i < grid_param_.Num(); ++i)
-			{
-				auto& cell = grid_param_[i];
-
-				if (0.0f < cell.mass_)
-				{
-					// convert momentum to velocity, apply gravity
-					cell.vel_ /= cell.mass_;
-					cell.vel_ += dt * gravity;
-
-					// boundary conditions
-					int y = i / grid_reso_.X;
-					int x = i - y * grid_reso_.X;
-					if (x < 2 || x > grid_reso_.X - 3) { cell.vel_.X = 0; }
-					if (y < 2 || y > grid_reso_.Y - 3) { cell.vel_.Y = 0; }
-
-				}
-			}
-		}
-
-		// G2P
-		{
-			FVector2D weights[3];
-			for (int pi = 0; pi < particle_.Num(); ++pi)
-			{
-				auto& p = particle_[pi];
-
-				// reset velocity
-				p.vel_ = FVector2D::ZeroVector;
-
-				// quadratic interpolation weights
-				FIntVector cell_idx = FIntVector(p.pos_.X, p.pos_.Y, 0);
-				FVector2D cell_diff = (p.pos_ - FVector2D(cell_idx.X, cell_idx.Y)) - 0.5f;
-
-				FuncQuadraticInterpolationWeights(cell_diff, weights);
-
-				// constructing affine per-particle momentum matrix from APIC / MLS-MPM.
-				// see APIC paper (https://web.archive.org/web/20190427165435/https://www.math.ucla.edu/~jteran/papers/JSSTS15.pdf), page 6
-				// below equation 11 for clarification. this is calculating C = B * (D^-1) for APIC equation 8,
-				// where B is calculated in the inner loop at (D^-1) = 4 is a constant when using quadratic interpolation functions
-				FMatrix2x2 B = GetZeroMatrix2x2();
-				for (int gx = 0; gx < 3; ++gx)
-				{
-					for (int gy = 0; gy < 3; ++gy)
-					{
-						float weight = weights[gx].X * weights[gy].Y;
-
-						FIntVector cell_x = FIntVector(cell_idx.X + gx - 1, cell_idx.Y + gy - 1, 0);
-						int cell_index = (int)cell_x.X + grid_reso_.X * (int)cell_x.Y;
-
-						FVector2D dist = (FVector2D(cell_x.X, cell_x.Y) - p.pos_) + 0.5f;
-						FVector2D weighted_velocity = grid_param_[cell_index].vel_ * weight;
-
-						// APIC paper equation 10, constructing inner term for B
-						const auto c0 = weighted_velocity * dist.X;
-						const auto c1 = weighted_velocity * dist.Y;
-						B = AddMatrix2x2(B, FMatrix2x2(c0.X, c1.X, c0.Y, c1.Y));
-
-						p.vel_ += weighted_velocity;
-					}
-				}
-				//p.affine_momentum_ = B * 4.0f;
-				{
-					float m00, m01, m10, m11;
-					B.GetMatrix(m00, m01, m10, m11);
-					p.affine_momentum_ = MulMatrix2x2(FMatrix2x2(m00, m01, m10, m11), 4.0f);
-				}
-
-				// advect particles
-				p.pos_ += p.vel_ * dt;
-
-				// safety clamp to ensure particles don't exit simulation domain
-				p.pos_.X = FMath::Clamp(p.pos_.X, 1.0f, grid_reso_.X - 2.0f);
-				p.pos_.Y = FMath::Clamp(p.pos_.Y, 1.0f, grid_reso_.Y - 2.0f);
-			}
-		}
-	}
-	// テスト用のパーティクルセットアップ
-	void MlsMpm2d_Fluid::SetupTestParticle()
-	{
-		FVector2D center = FVector2D(grid_reso_.X, grid_reso_.Y) * 0.5f;
-		{
-			const float spacing = 0.5f;
-			const int box_x = 16, box_y = 16;
-			const float sx = grid_reso_.X / 2.0f, sy = grid_reso_.Y / 2.0f;
-			for (float i = sx - box_x / 2; i < sx + box_x / 2; i += spacing) {
-				for (float j = sy - box_y / 2; j < sy + box_y / 2; j += spacing) {
-					auto pos = FVector2D(i, j);
-					auto vel = FVector2D::ZeroVector; //FVector2D(FMath::FRand() * 2.0f - 1.0f, FMath::FRand() + 2.75f) * 6.0f;
-					AddParticle(pos, vel);
-				}
-			}
-		}
-	}
-
 }

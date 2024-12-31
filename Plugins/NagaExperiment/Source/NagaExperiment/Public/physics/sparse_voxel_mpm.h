@@ -21,7 +21,6 @@ namespace naga
 {
 	namespace mpm
 	{
-
 		struct Mtx3x3
 		{
 			// 列ベクトル.
@@ -660,143 +659,139 @@ namespace naga
 			float elastic_mu_ = 3.0f;
 			float initial_density_ = 1.0f;
 		};
+		
 
+
+		//--------------------------------------------------------------------------------------------------------------------------------------
+		// MPM参考実装の検証.
+		// https://nialltl.neocities.org/articles/mpm_guide.html
+		//--------------------------------------------------------------------------------------------------------------------------------------
+		// Moving Least Squares Material Point Method 実装
+		// https://nialltl.neocities.org/articles/mpm_guide.html
+		class MlsMpm2d_Base
+		{
+		public:
+			struct Particle
+			{
+				FVector2D pos_;
+				FVector2D vel_;
+				FMatrix2x2	affine_momentum_;
+				float	mass_;
+			};
+			struct Cell
+			{
+				FVector2D vel_;
+				float	mass_;
+				static Cell Zero()
+				{
+					Cell c;
+					c.vel_ = FVector2D::ZeroVector;
+					c.mass_ = 0.0f;
+					return c;
+				}
+			};
+
+			MlsMpm2d_Base() {}
+			bool Initialize(int grid_reso_x, int grid_reso_y);
+
+			void AddParticle(const FVector2D& pos, const FVector2D& vel);
+			void AdvanceSimulation(float delta_sec);
+
+			// テスト用のパーティクルセットアップ
+			void SetupTestParticle();
+
+			FIntVector	grid_reso_ = FIntVector(64, 64, 1);
+			TArray<Cell> grid_param_;
+
+			TArray<Particle> particle_;
+		};
+
+		// Moving Least Squares Material Point Method 実装
+		// 初期体積計算のために更新開始前にすべてのパーティクルが追加済みである必要がある.
+		// https://nialltl.neocities.org/articles/mpm_guide.html
+		class MlsMpm2d_Elastic
+		{
+		public:
+			struct Particle
+			{
+				FVector2D pos_;
+				FVector2D vel_;
+				FMatrix2x2	affine_momentum_;
+				float	mass_;
+				float	initial_volume_;
+			};
+			struct Cell
+			{
+				FVector2D vel_;
+				float	mass_;
+				static Cell Zero()
+				{
+					Cell c;
+					c.vel_ = FVector2D::ZeroVector;
+					c.mass_ = 0.0f;
+					return c;
+				}
+			};
+
+			MlsMpm2d_Elastic() {}
+			bool Initialize(int grid_reso_x, int grid_reso_y);
+
+			void AddParticle(const FVector2D& pos, const FVector2D& vel);
+			void AdvanceSimulation(float delta_sec);
+
+			// テスト用のパーティクルセットアップ
+			void SetupTestParticle();
+
+			FIntVector	grid_reso_ = FIntVector(64, 64, 1);
+			TArray<Cell> grid_param_;
+
+			TArray<Particle> particle_;
+			TArray<FMatrix2x2> particle_deform_grad_;
+
+			bool is_first_frame_ = true;
+		};
+
+
+		// Moving Least Squares Material Point Method 実装
+		// 流体サンプル.
+		// https://nialltl.neocities.org/articles/mpm_guide.html
+		class MlsMpm2d_Fluid
+		{
+		public:
+			struct Particle
+			{
+				FVector2D pos_;
+				FVector2D vel_;
+				FMatrix2x2	affine_momentum_;
+				float	mass_;
+			};
+			struct Cell
+			{
+				FVector2D vel_;
+				float	mass_;
+				static Cell Zero()
+				{
+					Cell c;
+					c.vel_ = FVector2D::ZeroVector;
+					c.mass_ = 0.0f;
+					return c;
+				}
+			};
+
+			MlsMpm2d_Fluid() {}
+			bool Initialize(int grid_reso_x, int grid_reso_y);
+
+			void AddParticle(const FVector2D& pos, const FVector2D& vel);
+			void AdvanceSimulation(float delta_sec);
+
+			// テスト用のパーティクルセットアップ
+			void SetupTestParticle();
+
+			FIntVector	grid_reso_ = FIntVector(64, 64, 1);
+			TArray<Cell> grid_param_;
+
+			TArray<Particle> particle_;
+			bool is_first_frame_ = true;
+		};
 	}
-
-
-
-
-
-	//--------------------------------------------------------------------------------------------------------------------------------------
-	// MPM参考実装の検証.
-	// https://nialltl.neocities.org/articles/mpm_guide.html
-	//--------------------------------------------------------------------------------------------------------------------------------------
-	// Moving Least Squares Material Point Method 実装
-	// https://nialltl.neocities.org/articles/mpm_guide.html
-	class MlsMpm2d_Base
-	{
-	public:
-		struct Particle
-		{
-			FVector2D pos_;
-			FVector2D vel_;
-			FMatrix2x2	affine_momentum_;
-			float	mass_;
-		};
-		struct Cell
-		{
-			FVector2D vel_;
-			float	mass_;
-			static Cell Zero()
-			{
-				Cell c;
-				c.vel_ = FVector2D::ZeroVector;
-				c.mass_ = 0.0f;
-				return c;
-			}
-		};
-
-		MlsMpm2d_Base() {}
-		bool Initialize(int grid_reso_x, int grid_reso_y);
-
-		void AddParticle(const FVector2D& pos, const FVector2D& vel);
-		void AdvanceSimulation(float delta_sec);
-
-		// テスト用のパーティクルセットアップ
-		void SetupTestParticle();
-
-		FIntVector	grid_reso_ = FIntVector(64, 64, 1);
-		TArray<Cell> grid_param_;
-
-		TArray<Particle> particle_;
-	};
-
-	// Moving Least Squares Material Point Method 実装
-	// 初期体積計算のために更新開始前にすべてのパーティクルが追加済みである必要がある.
-	// https://nialltl.neocities.org/articles/mpm_guide.html
-	class MlsMpm2d_Elastic
-	{
-	public:
-		struct Particle
-		{
-			FVector2D pos_;
-			FVector2D vel_;
-			FMatrix2x2	affine_momentum_;
-			float	mass_;
-			float	initial_volume_;
-		};
-		struct Cell
-		{
-			FVector2D vel_;
-			float	mass_;
-			static Cell Zero()
-			{
-				Cell c;
-				c.vel_ = FVector2D::ZeroVector;
-				c.mass_ = 0.0f;
-				return c;
-			}
-		};
-
-		MlsMpm2d_Elastic() {}
-		bool Initialize(int grid_reso_x, int grid_reso_y);
-
-		void AddParticle(const FVector2D& pos, const FVector2D& vel);
-		void AdvanceSimulation(float delta_sec);
-
-		// テスト用のパーティクルセットアップ
-		void SetupTestParticle();
-
-		FIntVector	grid_reso_ = FIntVector(64, 64, 1);
-		TArray<Cell> grid_param_;
-
-		TArray<Particle> particle_;
-		TArray<FMatrix2x2> particle_deform_grad_;
-
-		bool is_first_frame_ = true;
-	};
-
-
-	// Moving Least Squares Material Point Method 実装
-	// 流体サンプル.
-	// https://nialltl.neocities.org/articles/mpm_guide.html
-	class MlsMpm2d_Fluid
-	{
-	public:
-		struct Particle
-		{
-			FVector2D pos_;
-			FVector2D vel_;
-			FMatrix2x2	affine_momentum_;
-			float	mass_;
-		};
-		struct Cell
-		{
-			FVector2D vel_;
-			float	mass_;
-			static Cell Zero()
-			{
-				Cell c;
-				c.vel_ = FVector2D::ZeroVector;
-				c.mass_ = 0.0f;
-				return c;
-			}
-		};
-
-		MlsMpm2d_Fluid() {}
-		bool Initialize(int grid_reso_x, int grid_reso_y);
-
-		void AddParticle(const FVector2D& pos, const FVector2D& vel);
-		void AdvanceSimulation(float delta_sec);
-
-		// テスト用のパーティクルセットアップ
-		void SetupTestParticle();
-
-		FIntVector	grid_reso_ = FIntVector(64, 64, 1);
-		TArray<Cell> grid_param_;
-
-		TArray<Particle> particle_;
-		bool is_first_frame_ = true;
-	};
-
 }

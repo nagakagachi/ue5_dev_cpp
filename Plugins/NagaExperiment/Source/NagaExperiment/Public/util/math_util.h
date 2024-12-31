@@ -724,6 +724,24 @@ namespace naga
 			return FVectorFloorToInt((pos + cell_size * 0.5f) / cell_size);
 		}
 
+		
+		// 引数ベクトルを法線とする正規直交基底を計算.
+		// https://tyfkda.github.io/blog/2017/09/07/onb-revisited.html
+		static void CalcOrthonormalBasisBranchless(const FVector& n, FVector& out_t, FVector& out_bn) {
+			float sign = std::copysignf(1.0f, n.Z);
+			const float a = -1.0f / (sign + n.Z);
+			const float b = n.X * n.Y * a;
+			out_t = FVector(1.0f + sign * n.X * n.X * a, sign * b, -sign * n.X);
+			out_bn = FVector(b, sign + n.Y * n.Y * a, -n.Y);
+		}
+		// 引数ベクトルに直交するベクトルを計算.
+		// https://tyfkda.github.io/blog/2017/09/07/onb-revisited.html
+		static FVector CalcOrthogonalBranchless(const FVector& n) {
+			float sign = std::copysignf(1.0f, n.Z);
+			const float a = -1.0f / (sign + n.Z);
+			const float b = n.X * n.Y * a;
+			return FVector(1.0f + sign * n.X * n.X * a, sign * b, -sign * n.X);
+		}
 
 	}
 
