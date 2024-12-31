@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <assert.h>
+#include <chrono>
 #include <array>
 #include <tuple>
 #include <bitset>
@@ -1226,4 +1227,1040 @@ namespace naga
 		TArray<ParticleTestData> particle_pool_;
 	};
 	// ------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+	// ------------------------------------------------------------------------------------------------------------------------------------------------
+	// 格子ベース流体用SparseGrid構造.
+	//	近傍処理などのため階層化はなし. 実態はHashGrid.
+	template<int k_num_level = 1>
+	class NglSparseGridFluid
+	{
+	public:
+		static constexpr int k_max_level = k_num_level - 1;
+		static_assert(0 <= k_max_level);
+
+
+		// 原論文では Block下に 2^3 Subblock があり, 各Subblockが 2^3 Cell を持つことで, 4^3 Cell の塊となっていたが, 構造の簡易化のため Blockが直接 4^3 Cell を持つ形式で検証する.
+		static constexpr int k_cell_brick_reso = 4;
+		static constexpr int k_cell_brick_vol3d = k_cell_brick_reso * k_cell_brick_reso * k_cell_brick_reso;
+		static constexpr int k_cell_brick_max_index = k_cell_brick_reso - 1;
+
+		// 現状はCell(シミュレーション解像度)のサイズは固定.
+		static constexpr float k_cell_width_ws = 100.0f;
+		static constexpr float k_cell_width_inv_ws = 1.0f / k_cell_width_ws;
+		// CellをまとめるBlockのサイズ.
+		static constexpr float k_block_width_ws = k_cell_brick_reso * k_cell_width_ws;
+		static constexpr float k_block_width_inv_ws = 1.0f / k_block_width_ws;
+
+
+		// ----------------------------------------------------------------------------------------------------------------------------------
+			using Vec3iCode = uint32_t;
+			static constexpr uint32_t k_Vec3iCode_bitwidth_x = 11;
+			static constexpr uint32_t k_Vec3iCode_bitwidth_y = 11;
+			static constexpr uint32_t k_Vec3iCode_bitwidth_z = 10;
+			static_assert((sizeof(Vec3iCode) * 8) >= (k_Vec3iCode_bitwidth_x + k_Vec3iCode_bitwidth_y + k_Vec3iCode_bitwidth_z));
+
+			static constexpr uint32_t k_Vec3iCode_mask_x = (1u << k_Vec3iCode_bitwidth_x) - 1;
+			static constexpr uint32_t k_Vec3iCode_mask_y = (1u << k_Vec3iCode_bitwidth_y) - 1;
+			static constexpr uint32_t k_Vec3iCode_mask_z = (1u << k_Vec3iCode_bitwidth_z) - 1;
+
+
+			static constexpr Vec3iCode Vec3iToCode(FIntVector pi)
+			{
+				return (pi.X & k_Vec3iCode_mask_x) | ((pi.Y & k_Vec3iCode_mask_y) << (k_Vec3iCode_bitwidth_x)) | ((pi.Z & k_Vec3iCode_mask_z) << (k_Vec3iCode_bitwidth_x + k_Vec3iCode_bitwidth_y));
+			}
+			static constexpr FIntVector CodeToVec3i(Vec3iCode code)
+			{
+				return { (code & k_Vec3iCode_mask_x), ((code >> k_Vec3iCode_bitwidth_x) & k_Vec3iCode_mask_y), ((code >> (k_Vec3iCode_bitwidth_x + k_Vec3iCode_bitwidth_y)) & k_Vec3iCode_mask_z) };
+			}
+		// ----------------------------------------------------------------------------------------------------------------------------------
+			static constexpr uint32_t BrickLocalIdToLocalIndex(FIntVector cell_brick_local_id)
+			{
+				return (cell_brick_local_id.X) + (cell_brick_local_id.Y * k_cell_brick_reso) + (cell_brick_local_id.Z * k_cell_brick_reso * k_cell_brick_reso);
+			}
+			static constexpr std::tuple<int,int,int> LocalIndexToBrickLocalId(uint32_t index)
+			{
+				return { index % k_cell_brick_reso, index / (k_cell_brick_reso) % k_cell_brick_reso, index / (k_cell_brick_reso * k_cell_brick_reso) };
+			}
+		// ----------------------------------------------------------------------------------------------------------------------------------
+
+
+		// ----------------------------------------------------------------------------------------------------------------------------------
+		// 可変長で確保効率とメモリ局所性をある程度考慮したPool. オブジェクトをSubPool単位で確保してPoolを伸長する.
+			template<typename T, int k_elem_count>
+			struct SubPool
+			{
+				std::array<T, k_elem_count>	sub_pool;
+				std::bitset<k_elem_count>	sub_pool_used;
+
+				int FindUnused() const
+				{
+					// 素直に.
+					for (auto i = 0; i < sub_pool_used.size(); ++i)
+					{
+						if (!sub_pool_used[i])
+							return i;
+					}
+					return -1;// 無し.
+				}
+			};
+
+			using PoolElemId = uint32_t;// SubPoolとその内部要素を識別するID.
+			static constexpr PoolElemId k_PoolElemId_invalid = ~PoolElemId(0);
+		
+			// k_subpool_elem_count_log2 : Subpool一つが確保する要素数のLog2を指定する. 7 -> 2^7=128要素.
+			// 要素は PoolElemId で識別するが, 実際にはただのインデックスで, 内部的にどのSubpoolに対応するかを下位ビットをマスクしているだけである.
+			template<typename T, int k_subpool_elem_count_log2 = 7>
+			struct Pool
+			{
+				static constexpr uint32_t k_subpool_elem_count = 1 << k_subpool_elem_count_log2;
+				// 0 <-> k_subpool_elem_count-1 のインデックスを保持するのに必要なビット数.
+				static constexpr uint32_t k_subpool_index_mask = (1 << k_subpool_elem_count_log2) - 1;
+
+
+				using SubPoolType = SubPool<T, k_subpool_elem_count>;
+				using SubPoolId = uint32_t;//SubPool識別ID.
+				using SubPoolElemIndex = uint32_t;//SubPool内要素インデックス.
+
+
+				static constexpr PoolElemId ToPoolElemId(SubPoolId subpool, SubPoolElemIndex local_index)
+				{
+					// 単純に下位 k_subpool_elem_count_log2 ビットがSubpool内インデックス, 上位ビット部がSubpoolインデックス.
+					return (uint32_t(subpool) << k_subpool_elem_count_log2) | (local_index & k_subpool_index_mask);
+				}
+				static constexpr std::tuple<SubPoolId, SubPoolElemIndex> fromPoolElemId(PoolElemId ref_id)
+				{
+					// 参照IDからpool番号と内部インデックスを復元.
+					return { ref_id >> k_subpool_elem_count_log2, ref_id & k_subpool_index_mask };
+				}
+
+				PoolElemId Alloc()
+				{
+					// 空きのあるSubPool検索.
+					auto poolid = subpool_full_flag_.Find(false);
+					if (INDEX_NONE == poolid)
+					{
+						// 空きがなければSubPoolを新規追加.
+						poolid = sub_pool_.Num();
+						// SubPool追加.
+						sub_pool_.Add( new SubPoolType() );
+						// SubPoolのフラグはすべてクリア.
+						sub_pool_[poolid]->sub_pool_used.reset();
+
+						subpool_full_flag_.Add(false);// fullフラグも追加.
+					}
+					// SubPool内の空き検索.
+					const auto local_index = sub_pool_[poolid]->FindUnused();
+					assert(INDEX_NONE != local_index);
+					sub_pool_[poolid]->sub_pool_used[local_index] = true;// 使用状態に.
+					subpool_full_flag_[poolid] = sub_pool_[poolid]->sub_pool_used.all();// SubPoolのFullフラグ更新.
+
+					return ToPoolElemId(poolid, local_index);
+				}
+				void Dealloc(PoolElemId id)
+				{
+					assert(k_PoolElemId_invalid != id);
+					const auto [poolid, index] = fromPoolElemId(id);
+					assert(k_subpool_elem_count > index);
+					assert(sub_pool_.Num() > poolid);
+					assert(sub_pool_[poolid]->sub_pool_used[index]);
+
+					sub_pool_[poolid]->sub_pool_used[index] = false;
+					subpool_full_flag_[poolid] = sub_pool_[poolid]->sub_pool_used.all();// SubPoolのFullフラグ更新.
+				}
+
+				// Used状態を取得.
+				bool IsUsed(PoolElemId id) const
+				{
+					assert(k_PoolElemId_invalid != id);
+					const auto [poolid, index] = fromPoolElemId(id);
+					assert(k_subpool_elem_count > index);
+					return sub_pool_[poolid]->sub_pool_used[index];
+				}
+
+				// Getter.
+				const T& Get(PoolElemId id) const
+				{
+					assert(k_PoolElemId_invalid != id);
+					const auto [poolid, index] = fromPoolElemId(id);
+					assert(k_subpool_elem_count > index);
+					assert(sub_pool_[poolid]->sub_pool_used[index]);
+					return sub_pool_[poolid]->sub_pool[index];
+				}
+				// Getter.
+				T& Get(PoolElemId id)
+				{
+					assert(k_PoolElemId_invalid != id);
+					const auto [poolid, index] = fromPoolElemId(id);
+					assert(k_subpool_elem_count > index);
+					assert(sub_pool_[poolid]->sub_pool_used[index]);
+					return sub_pool_[poolid]->sub_pool[index];
+				}
+
+				Pool() = default;
+				~Pool()
+				{
+					// Subpool要素解放.
+					for (auto* p : sub_pool_)
+					{
+						assert(nullptr != p);
+						delete p;
+					}
+					sub_pool_ = {};
+					subpool_full_flag_ = {};
+				}
+
+				// 要素最大数. 確保済みSubpool数 * Subpool内要素数.
+				// 0ベースの単一インデックスで全要素を巡回する場合などに利用. その場合のGet()への引数はそのままインデックス値を渡せば内部の対応Subpool計算は正常動作する.
+				uint32_t Num() const
+				{
+					return sub_pool_.Num() * k_subpool_elem_count;
+				}
+
+				// Cell SubPool のFull状態チェック.
+				TBitArray<>				subpool_full_flag_ = {};
+				// Cell SubPool へのポインタ配列.
+				TArray<SubPoolType*>	sub_pool_ = {};
+			};
+		// ----------------------------------------------------------------------------------------------------------------------------------
+
+
+		// NxNxN のCellBrick.
+		struct CellBrick
+		{
+			// Cellは塊で管理.
+			// 並列処理用にダブルバッファ.
+			std::array<std::array<FVector, k_cell_brick_vol3d>, 2> vel;
+
+
+			// Divergence用ワーク.
+			std::array<float, k_cell_brick_vol3d>					work_divergence;
+			// Pressure用ワーク. Pingpongのためにダブルバッファ.
+			std::array<std::array<float, k_cell_brick_vol3d>, 2>	work_pressure;
+
+
+			// 近傍のBlockへの参照. CellBrickではなくBlockである点に注意(位置情報等も欲しいため). 26近傍+自身の親で27.
+			std::array<PoolElemId, 27>	block_link;
+		};
+
+		// CellBrickを保持するBlock.
+		struct Block
+		{
+			// HashKeyとなるCodeも保持. 自身の位置を復元する必要がありそうなため.
+			Vec3iCode position_code = {};
+			// CellBrickへの参照. 参照先はリニアバッファ上の位置かも知れないし, ObjectPoolのIDかもしれない.
+			PoolElemId cell_brick_addr = k_PoolElemId_invalid;
+		};
+
+
+
+		// 現実装ではシミュレーション空間の範囲を原点中心で固定.
+		static constexpr int k_sim_space_block_min_x = -(int(k_Vec3iCode_mask_x) / 2.0f) - 0.5f;
+		static constexpr int k_sim_space_block_min_y = -(int(k_Vec3iCode_mask_y) / 2.0f) - 0.5f;
+		static constexpr int k_sim_space_block_min_z = -(int(k_Vec3iCode_mask_z) / 2.0f) - 0.5f;
+		inline static const FIntVector	k_sim_space_block_min_i = { k_sim_space_block_min_x, k_sim_space_block_min_y, k_sim_space_block_min_z };
+		inline static const FVector		k_sim_space_block_min_f = { k_sim_space_block_min_x, k_sim_space_block_min_y, k_sim_space_block_min_z };
+
+		// world座標を指定のMipレベルにおけるBlock座標に変換.
+		//	mip_level=0				-> 最も精細な解像度.
+		//	mip_level=k_max_level	-> 最も粗い解像度.
+		FVector WorldToBlock(int mip_level, FVector world_pos) const
+		{
+			const auto block_pos_f = world_pos * k_block_width_inv_ws - k_sim_space_block_min_f;
+			return block_pos_f / (1 << mip_level);// Mip0から指定Mipでの位置へ変換.
+		}
+		// 特定のMipレベルにおけるBlock座標をWorld座標に変換.
+		FVector BlockToWorld(int mip_level, FVector block_pos) const
+		{
+			const auto block_pos_f = block_pos * (1 << mip_level);// Mip0相当でのBlock位置.
+			return (block_pos_f + k_sim_space_block_min_f)* k_block_width_ws;
+		}
+
+	public:
+		NglSparseGridFluid()
+		{
+		}
+		~NglSparseGridFluid()
+		{
+			Finalize();
+		}
+
+		bool Initialize()
+		{
+			is_initialized_ = true;
+			return true;
+		}
+		bool IsInitialized() const
+		{
+			return is_initialized_;
+		}
+
+		bool Finalize()
+		{
+			// テストも兼ねて全部破棄.
+			{
+				for (int mip = 0; mip < k_num_level; ++mip)
+				{
+					for (auto pooli = 0; pooli < cell_brick_pool_[mip].sub_pool_.Num(); ++pooli)
+					{
+						for (auto i = 0; i < cell_brick_pool_[mip].sub_pool_[pooli]->sub_pool.size(); ++i)
+						{
+							if (!cell_brick_pool_[mip].sub_pool_[pooli]->sub_pool_used[i])
+								continue;
+							// ID作成
+							const auto alloc_id = cell_brick_pool_[mip].ToPoolElemId(pooli, i);
+							// 解放.
+							cell_brick_pool_[mip].Dealloc(alloc_id);
+						}
+					}
+					// 全破棄チェック.
+					assert(0 == cell_brick_pool_[mip].subpool_full_flag_.CountSetBits());
+					for (auto i = 0; i < cell_brick_pool_[mip].subpool_full_flag_.Num(); ++i)
+					{
+						if (cell_brick_pool_[mip].subpool_full_flag_[i])
+						{
+							assert(false);
+						}
+					}
+				}
+			}
+			{
+				for (int mip = 0; mip < k_num_level; ++mip)
+				{
+					auto& pool = block_pool_[mip];
+					// テストも兼ねて全部破棄.
+					for (auto pooli = 0; pooli < pool.sub_pool_.Num(); ++pooli)
+					{
+						for (auto i = 0; i < pool.sub_pool_[pooli]->sub_pool.size(); ++i)
+						{
+							if (!pool.sub_pool_[pooli]->sub_pool_used[i])
+								continue;
+							// ID作成
+							const auto alloc_id = pool.ToPoolElemId(pooli, i);
+							// 解放.
+							pool.Dealloc(alloc_id);
+						}
+					}
+
+					// 全破棄チェック.
+					assert(0 == pool.subpool_full_flag_.CountSetBits());
+					for (auto i = 0; i < pool.subpool_full_flag_.Num(); ++i)
+					{
+						if (pool.subpool_full_flag_[i])
+						{
+							assert(false);
+						}
+					}
+				}
+			}
+			// HashTableクリア.
+			for (auto i = 0; i < grid_hash_.size(); ++i)
+			{
+				grid_hash_[i].clear();
+			}
+			return true;
+		}
+
+		// ワールド座標サンプルでシミュレーション空間を通過.
+		struct SamplePointInfo
+		{
+			FVector pos{};
+			FVector dir{};
+		};
+		// Grid構造に要素を追加する.
+		//	現在はカメラからのレイキャストヒット位置に要素を追加して物体表面に分布するようにしている.
+		void AppendElements(const FVector& sample_ray_origin, const TArray<std::tuple<SamplePointInfo, bool>>& sample_ray_end_and_ishit)
+		{
+			const auto k_front = FrontBufferIndex();
+			const auto k_back = BackBufferIndex();
+
+			const FIntVector k_block_max(k_Vec3iCode_mask_x, k_Vec3iCode_mask_y, k_Vec3iCode_mask_z);
+			// サンプル点の追加.
+			for (const auto& sample : sample_ray_end_and_ishit)
+			{
+				const auto& [hit_info, hit] = sample;
+
+				// ヒットしたサンプルのみ.
+				if (!hit)
+					continue;
+
+				const auto block_pos_f = WorldToBlock(0, hit_info.pos);
+				const auto block_pos_i = naga::math::FVectorFloorToInt(block_pos_f);
+
+				// 範囲チェック.
+				if (0 > block_pos_i.GetMin() || 0 > (k_block_max - block_pos_i).GetMin())
+					continue;
+
+				// Blockの位置Code.
+				const auto block_code = Vec3iToCode(block_pos_i);
+
+				const int mip_level = 0;
+				auto find_block = grid_hash_[mip_level].find(block_code);// 検索.
+				if (grid_hash_[mip_level].end() == find_block)
+				{
+					// Blocl割当.
+					const auto alloc_block_id = block_pool_[mip_level].Alloc(); assert(k_PoolElemId_invalid != alloc_block_id);
+
+					// CellBrickの割当.
+					const auto alloc_cell_brick_id = cell_brick_pool_[mip_level].Alloc(); assert(k_PoolElemId_invalid != alloc_cell_brick_id);
+					{
+						// Brick初期化.
+						auto& brick = cell_brick_pool_[mip_level].Get(alloc_cell_brick_id);
+						
+						// 近傍BlockLinkをクリア. 素直にアクセスするため27要素としているが工夫できるところはありそう.
+						brick.block_link.fill(k_PoolElemId_invalid);
+
+						brick.vel[k_front].fill(FVector::ZeroVector);// 速度ゼロクリア.
+						brick.vel[k_back].fill(FVector::ZeroVector);// 速度ゼロクリア.
+					}
+
+					// Block初期化.
+					auto& new_block = block_pool_[mip_level].Get(alloc_block_id);
+					new_block =
+					{
+						block_code,
+						alloc_cell_brick_id,
+					};
+
+					// HashTable登録.
+					grid_hash_[mip_level][block_code] = alloc_block_id;
+					// 後段処理のために再検索.
+					find_block = grid_hash_[mip_level].find(block_code);
+				}
+				assert(grid_hash_[mip_level].end() != find_block);// 念のため.ind_block
+
+				// Blockに対する処理.
+				{
+					// block内frac
+					const auto block_frac = block_pos_f - FVector(block_pos_i);
+					// cell_brick 4x4x4 内のcell座標.
+					const auto local_cell_id =  naga::math::FVectorFloorToInt(block_frac * k_cell_brick_reso); assert(k_cell_brick_reso > local_cell_id.X && k_cell_brick_reso > local_cell_id.Y && k_cell_brick_reso > local_cell_id.Z);
+					const auto local_cell_index = BrickLocalIdToLocalIndex(local_cell_id); assert(k_cell_brick_vol3d > local_cell_index);
+					const auto block_id = find_block->second; assert(k_PoolElemId_invalid != block_id);
+
+					auto& block = block_pool_[mip_level].Get(block_id);
+
+					// CellBrick取得.
+					auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+					
+					// Cellの速度を上書き(値はテスト用).
+					//cell_brick.vel[k_front][local_cell_index] = FVector(1.0f, 0.0f, 0.0f) * 1000.0f; // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+					// 視線方向の速度でテスト.
+					auto test_vel = hit_info.pos - sample_ray_origin;
+					//cell_brick.vel[k_front][local_cell_index] = test_vel.GetSafeNormal() * 1000.0f; // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+					test_vel = test_vel - test_vel.Dot(hit_info.dir)*hit_info.dir*1.1f;
+					cell_brick.vel[k_front][local_cell_index] = test_vel.GetSafeNormal() * 1000.0f; // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+					// 向きベクトルのXY平面投影で速度設定.
+					//cell_brick.vel[k_front][local_cell_index] = ((hit_info.pos - sample_ray_origin)*FVector(1.0f, 1.0f, 0.0f)).GetSafeNormal() * 1000.0f; // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+					// 固定方向.
+					//cell_brick.vel[k_front][local_cell_index] = FVector::XAxisVector * 1000.0f; // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+				}
+			}
+		}
+
+		// グリッド構造の流体計算.
+		void UpdateSystem(float delta_sec)
+		{
+			static constexpr float k_debug_duffusion_rate = 0.5f;
+			//static constexpr float k_debug_duffusion_rate = 0.0f;
+			static constexpr float k_debug_Attenuation_rate = 0.999f;
+			
+			const auto k_front = FrontBufferIndex();
+			const auto k_back = BackBufferIndex();
+			flip_ = k_back;// ここでフリップ.
+
+			auto	progress_time_start = std::chrono::system_clock::now();
+
+			const int mip_level = 0;
+
+
+			// 要素の最大数. Pool管理での最大数なので抜けや末尾の不使用要素が含まれる.
+			const uint32_t block_count = block_pool_[mip_level].Num();
+
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			// 隣接情報 block_link の構築.
+			{
+				// 単方向13近傍方向.
+				// この方向の近傍Nodeを探索して自身と相手の近傍情報を変更するのであればDataRaceが起きないため, Node単位並列化が可能になる.
+				// 反対方向は別のNodeが処理をするので全Nodeの処理が終われば全方向(26方向)のApron処理が完了している.
+				const FIntVector k_oneway_neighbor_dir[13] =
+				{
+					// 正のX,Y,Z方向の面で接している近傍.
+					FIntVector(1,0,0), FIntVector(0,1,0), FIntVector(0,0,1),
+
+					// 辺で接している近傍.
+					FIntVector(1,1,0), FIntVector(1,-1,0),
+					FIntVector(0,1,1), FIntVector(0,-1,1),
+					FIntVector(1,0,1), FIntVector(1,0,-1),
+
+					// 角で接している近傍
+					FIntVector(1,1,1), FIntVector(1,-1,1), FIntVector(1,1,-1), FIntVector(1,-1,-1),
+				};
+				constexpr auto k_num_oneway_neighbor_dir = std::size(k_oneway_neighbor_dir);
+
+				// PoolのSubPool毎に
+				auto process_update_neighbor_link = [&](int i)
+				{
+					uint32_t block_addr = i;
+					if (!block_pool_[mip_level].IsUsed(block_addr))
+						return;
+
+					auto& block = block_pool_[mip_level].Get(block_addr);
+					const auto block_pos_i = CodeToVec3i(block.position_code);
+					const auto block_pos = BlockToWorld(mip_level, FVector(block_pos_i));
+					assert(k_PoolElemId_invalid != block.cell_brick_addr);
+					auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+
+					// 自分自身を持つBlockの参照も一応 0,0,0 に格納.
+					const auto self_block_index_self = (0 + 1) + ((0 + 1) * 3) + ((0 + 1) * 3 * 3);
+					cell_brick.block_link[self_block_index_self] = block_addr;
+
+
+					// 近傍Blockについて相互に情報更新.
+
+					// 単方向近傍の探索.
+					for (auto di = 0; di < k_num_oneway_neighbor_dir; ++di)
+					{
+						// 自身から見たこの方向の近傍Blockのインデックス. 事前計算とかできそう.
+						const auto neighbor_index_self = (k_oneway_neighbor_dir[di].X + 1) + ((k_oneway_neighbor_dir[di].Y + 1) * 3) + ((k_oneway_neighbor_dir[di].Z + 1) * 3 * 3);
+						// 相手から見た自身の近傍インデックス. 方向ベクトルの反転から計算.
+						const auto neighbor_index_neighbor = (-k_oneway_neighbor_dir[di].X + 1) + ((-k_oneway_neighbor_dir[di].Y + 1) * 3) + ((-k_oneway_neighbor_dir[di].Z + 1) * 3 * 3);
+
+						const auto neightbor_pos_i = block_pos_i + k_oneway_neighbor_dir[di];
+
+						// 近傍Blockの問い合わせ.
+						auto n_find = grid_hash_[mip_level].find(Vec3iToCode(neightbor_pos_i));
+						if ((n_find != grid_hash_[mip_level].end()))
+						{
+							const auto neighbor_block_addr = n_find->second;// 近傍BlockID
+							const auto neighbor_cell_brick_addr = block_pool_[mip_level].Get(neighbor_block_addr).cell_brick_addr;
+							// 相手側のCellの近傍情報書き換えも実行するため参照取得.
+							auto& neighbor_cell_brick = cell_brick_pool_[mip_level].Get(neighbor_cell_brick_addr);
+
+
+							cell_brick.block_link[neighbor_index_self] = neighbor_block_addr;// 自身の近傍情報に相手を書き込み.
+							neighbor_cell_brick.block_link[neighbor_index_neighbor] = block_addr;// 自身の近傍情報に相手を書き込み. 全てのBlockが並列実行されていても, 単方向近傍のアクセスなので競合は発生しない!.
+						}
+						else
+						{
+							// 該当近傍は存在しない.
+
+							cell_brick.block_link[neighbor_index_self] = k_PoolElemId_invalid;// 無効値.
+						}
+					}
+
+				};
+
+	#	if 1
+				// 並列.
+				ParallelFor( block_count, process_update_neighbor_link );
+	#	else
+				// 直列.
+				for (auto i = 0u; i < block_count; ++i)
+				{ process_update_neighbor_link(i); }
+	#	endif
+			}
+
+
+
+
+			// 注目CellBrickの0,0,0を基準とした近傍Cell位置から対応するBlockとCell位置を返す.
+			// CellBrickにキャッシュされた近傍BlockLinkを利用する.
+			// rel_cell_pos=(-1,0,0) の場合CellBrickの0,0,0のX方向-1のCellに関する情報を返す.
+			auto GetNeighborCellBrickIdAndPos = [&](CellBrick& cell_brick, const FIntVector& rel_cell_pos)
+			-> std::tuple<PoolElemId, FIntVector>
+			{
+				const FIntVector comp_min_bound = naga::math::FVectorCompareLess(rel_cell_pos, FIntVector::ZeroValue);
+				const FIntVector comp_max_bound = naga::math::FVectorCompareGreater(rel_cell_pos, FIntVector(k_cell_brick_max_index));
+				// 負の範囲外なら-1, 正の範囲外なら+, 範囲内なら0.
+				const FIntVector comp_stat = comp_max_bound - comp_min_bound;
+
+				const FIntVector neighbor_cellbrick_lookup = comp_stat + FIntVector(1, 1, 1);// -1,0,1 に +1 して　0,1,2 のインデックスとする.
+				// 直列インデックスへ.
+				const int neighbor_cellbrick_lookup_index = neighbor_cellbrick_lookup.X + (neighbor_cellbrick_lookup.Y * 3) + (neighbor_cellbrick_lookup.Z * 3 * 3);
+				const PoolElemId neighbor_cellbrick_id = cell_brick.block_link[neighbor_cellbrick_lookup_index];
+
+				constexpr int k_neighbor_brick_offset[3] = { k_cell_brick_reso, 0, -k_cell_brick_reso };
+				// 近傍BrickにおけるCell座標を計算するためのオフセット. -1=>負側の近傍での 3 に対応させるための値.
+				const FIntVector neighbor_cell_offset = FIntVector(k_neighbor_brick_offset[neighbor_cellbrick_lookup.X], k_neighbor_brick_offset[neighbor_cellbrick_lookup.Y], k_neighbor_brick_offset[neighbor_cellbrick_lookup.Z]);
+				const FIntVector neighbor_cell_pos = rel_cell_pos + neighbor_cell_offset;
+				return { neighbor_cellbrick_id, neighbor_cell_pos };
+			};
+
+
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			// diffusion.
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			auto diffusion_process = [&](int i)
+			{
+				uint32_t pool_id = i;
+				if (!block_pool_[mip_level].IsUsed(pool_id))
+					return;
+
+				const auto& block = block_pool_[mip_level].Get(pool_id);
+				const auto block_pos_i = CodeToVec3i(block.position_code);
+				const auto block_pos = BlockToWorld(mip_level, FVector(block_pos_i)); assert(k_PoolElemId_invalid != block.cell_brick_addr);
+				auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+
+				// 全Cellについて一様に近傍Cellを探索する. 近傍CellBrickへのアクセスが不要な範囲でも追加のコストがかかっているため高速化の余地あり.
+				{
+					for (int cz = 0; cz < k_cell_brick_reso; ++cz)
+					{
+						for (int cy = 0; cy < k_cell_brick_reso; ++cy)
+						{
+							for (int cx = 0; cx < k_cell_brick_reso; ++cx)
+							{
+								int num_valid_neighbor = 0;
+								FVector neighbor_sum = FVector::ZeroVector;
+								// 軸ごとの垂直近傍6つで計算,
+								for (int oni = 0; oni < 6; ++oni)
+								{
+									const auto axis_sign = (oni & 0x01) * 2 - 1;// -1, +1
+									const auto axis_component = (oni >> 1) & 0b11;// 0:x, 1:y, 2:z
+									const auto neighbor_offset = FIntVector((0b001 >> axis_component) & 0x01, (0b010 >> axis_component) & 0x01, (0b100 >> axis_component) & 0x01) * axis_sign;
+
+									auto [n_cellbrick_id, n_pos] = GetNeighborCellBrickIdAndPos(cell_brick, FIntVector(cx, cy, cz) + neighbor_offset);
+
+									if (k_PoolElemId_invalid == n_cellbrick_id)
+										continue;
+
+									const auto& ref_cellbrick = cell_brick_pool_[mip_level].Get(n_cellbrick_id);
+									const auto nci = BrickLocalIdToLocalIndex(n_pos);
+
+									neighbor_sum += ref_cellbrick.vel[k_front][nci];
+									num_valid_neighbor++;
+								}
+
+								// -----------------------------------------------------------------------------------
+								//const auto neighbor_avg = neighbor_sum / (3 * 3 * 3);// 無効Cellを真空とする場合.
+								const auto neighbor_avg = (0 < num_valid_neighbor) ? neighbor_sum / (num_valid_neighbor) : neighbor_sum;// 無効Cellを壁とする場合.
+								// -----------------------------------------------------------------------------------
+
+								const auto ci = BrickLocalIdToLocalIndex({ cx, cy, cz });
+								// 拡散
+								FVector next_vel = cell_brick.vel[k_front][ci] + (neighbor_avg - cell_brick.vel[k_front][ci]) * delta_sec * k_debug_duffusion_rate;
+								// 減衰
+								next_vel = next_vel + (next_vel * k_debug_Attenuation_rate - next_vel) * delta_sec;
+								cell_brick.vel[k_back][ci] = next_vel;
+							}
+						}
+					}
+				}
+			};
+
+	#	if 1
+			// 並列.
+			ParallelFor( block_count, diffusion_process );
+	#	else
+			// 直列.
+			for (auto i = 0u; i < block_count; ++i)
+			{ diffusion_process(i); }
+	#	endif
+
+
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			// divergence.
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			const auto vel_flip = k_back;
+			auto divergence_process = [&, vel_flip](int i)
+			{
+				uint32_t pool_id = i;
+				if (!block_pool_[mip_level].IsUsed(pool_id))
+					return;
+
+				const auto& block = block_pool_[mip_level].Get(pool_id);
+				const auto block_pos_i = CodeToVec3i(block.position_code);
+				const auto block_pos = BlockToWorld(mip_level, FVector(block_pos_i)); assert(k_PoolElemId_invalid != block.cell_brick_addr);
+				auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+
+				// 全Cellについて一様に近傍Cellを探索する. 近傍CellBrickへのアクセスが不要な範囲でも追加のコストがかかっているため高速化の余地あり.
+				{
+					for (int cz = 0; cz < k_cell_brick_reso; ++cz)
+					{
+						for (int cy = 0; cy < k_cell_brick_reso; ++cy)
+						{
+							for (int cx = 0; cx < k_cell_brick_reso; ++cx)
+							{
+								const auto ci = BrickLocalIdToLocalIndex({cx, cy, cz});
+								const auto cell_vel = cell_brick.vel[vel_flip][ci];
+
+								float cell_divergence = 0.0f;
+								// 軸ごとの垂直近傍6つで計算,
+								for (int oni = 0; oni < 6; ++oni)
+								{
+									const auto axis_sign = (oni & 0x01) * 2 - 1;// -1, +1
+									const auto axis_component = (oni >> 1) & 0b11;// 0:x, 1:y, 2:z
+									const auto neighbor_offset = FIntVector( (0b001 >> axis_component)&0x01, (0b010 >> axis_component)&0x01, (0b100 >> axis_component)&0x01) * axis_sign;
+
+									auto [n_cellbrick_id, n_pos] = GetNeighborCellBrickIdAndPos(cell_brick, FIntVector(cx, cy, cz) + neighbor_offset);
+
+									if (k_PoolElemId_invalid == n_cellbrick_id)
+										continue;
+
+									const auto& ref_cellbrick = cell_brick_pool_[mip_level].Get(n_cellbrick_id);
+									const auto nci = BrickLocalIdToLocalIndex(n_pos);
+
+									// Divergence.
+									// 中央差分であるため後で 1/2 することに注意.
+									cell_divergence += (neighbor_offset.X * ref_cellbrick.vel[vel_flip][nci].X) + (neighbor_offset.Y * ref_cellbrick.vel[vel_flip][nci].Y) + (neighbor_offset.Z * ref_cellbrick.vel[vel_flip][nci].Z);
+								}
+
+								// 中央差分のため 1/2 
+								cell_brick.work_divergence[ci] = cell_divergence * 0.5f;
+							}
+						}
+					}
+				}
+			};
+
+	#	if 1
+			// 並列.
+			ParallelFor( block_count, divergence_process );
+	#	else
+			// 直列.
+			for (auto i = 0u; i < block_count; ++i)
+			{ divergence_process(i); }
+	#	endif
+
+
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			// pressure buffer reset.
+			//	poisson equation iterationの前にバッファクリア. 別のループのついでにやったほうが効率良いかも.
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			auto pressure_prepare_process = [&](int i)
+			{
+				uint32_t pool_id = i;
+				if (!block_pool_[mip_level].IsUsed(pool_id))
+					return;
+
+				const auto& block = block_pool_[mip_level].Get(pool_id);
+				const auto block_pos_i = CodeToVec3i(block.position_code);
+				const auto block_pos = BlockToWorld(mip_level, FVector(block_pos_i)); assert(k_PoolElemId_invalid != block.cell_brick_addr);
+				auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+
+				//cell_brick.work_pressure[pressure_flip_].fill(0.0f);// 0クリア.
+
+				// 初回のdivergence項を設定することで全体として効率化の意図.
+
+				for (auto ci = 0; ci < k_cell_brick_vol3d; ++ci)
+				{
+					const float divergence = cell_brick.work_divergence[ci];
+					const float initial_pressure_value = (0.0f - (divergence / delta_sec)) / 6.0f;
+					cell_brick.work_pressure[pressure_flip_][ci] = initial_pressure_value;
+				}
+
+			};
+	#	if 1
+			// 並列.
+			ParallelFor(block_count, pressure_prepare_process);
+	#	else
+			// 直列.
+			for (auto i = 0u; i < block_count; ++i)
+			{
+				pressure_prepare_process(i);
+			}
+	#	endif
+
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			// pressure.
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			auto pressure_process = [&, delta_sec](int i)
+			{
+				uint32_t pool_id = i;
+				if (!block_pool_[mip_level].IsUsed(pool_id))
+					return;
+
+				const auto& block = block_pool_[mip_level].Get(pool_id);
+				const auto block_pos_i = CodeToVec3i(block.position_code);
+				const auto block_pos = BlockToWorld(mip_level, FVector(block_pos_i)); assert(k_PoolElemId_invalid != block.cell_brick_addr);
+				auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+
+				// 全Cellについて一様に近傍Cellを探索する. 近傍CellBrickへのアクセスが不要な範囲でも追加のコストがかかっているため高速化の余地あり.
+				{
+					for (int cz = 0; cz < k_cell_brick_reso; ++cz)
+					{
+						for (int cy = 0; cy < k_cell_brick_reso; ++cy)
+						{
+							for (int cx = 0; cx < k_cell_brick_reso; ++cx)
+							{
+								const auto ci = BrickLocalIdToLocalIndex({ cx, cy, cz });
+								const auto cell_vel = cell_brick.vel[vel_flip][ci];
+
+
+								// divergence.
+								const float divergence = cell_brick.work_divergence[ci];
+								const float pressure_prev = cell_brick.work_pressure[pressure_flip_][ci];
+
+								float accum_pressure = 0.0f;
+								// 軸ごとの垂直近傍6つで計算,
+								for (int oni = 0; oni < 6; ++oni)
+								{
+									const auto axis_sign = (oni & 0x01) * 2 - 1;// -1, +1
+									const auto axis_component = (oni >> 1) & 0b11;// 0:x, 1:y, 2:z
+									const auto neighbor_offset = FIntVector((0b001 >> axis_component) & 0x01, (0b010 >> axis_component) & 0x01, (0b100 >> axis_component) & 0x01) * axis_sign;
+
+									auto [n_cellbrick_id, n_pos] = GetNeighborCellBrickIdAndPos(cell_brick, FIntVector(cx, cy, cz) + neighbor_offset);
+
+									if (k_PoolElemId_invalid == n_cellbrick_id)
+									{
+										// 無効Cellの場合. 圧力差無し(壁)とする場合は自身のPressureをコピー.
+										accum_pressure += pressure_prev;
+									}
+									else
+									{
+										const auto& ref_cellbrick = cell_brick_pool_[mip_level].Get(n_cellbrick_id);
+										const auto nci = BrickLocalIdToLocalIndex(n_pos);
+
+										accum_pressure += ref_cellbrick.work_pressure[pressure_flip_][nci];
+									}
+								}
+
+								// difference method of Pressure Poisson Equation.
+								const float pressure_next = (accum_pressure - (divergence / delta_sec)) / 6.0f;
+
+								// 結果を次のフリップバッファに書き込み.
+								cell_brick.work_pressure[1 - pressure_flip_][ci] = pressure_next;
+							}
+						}
+					}
+				}
+			};
+			
+			// Pressure Poisson Equation 反復数.
+			const int k_num_pressure_iteration = 3;
+			for (int pressure_itr = 0; pressure_itr < k_num_pressure_iteration; ++pressure_itr)
+			{
+	#	if 1
+				// 並列.
+				ParallelFor(block_count, pressure_process);
+	#	else
+				// 直列.
+				for (auto i = 0u; i < block_count; ++i)
+				{
+					divergence_process(i);
+				}
+	#	endif
+
+				// フリップ.
+				pressure_flip_ = 1 - pressure_flip_;
+			}
+
+
+
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			// apply pressure.
+			// ------------------------------------------------------------------------------------------------------------------------------------------------------
+			auto pressure_apply_process = [&](int i)
+			{
+				uint32_t pool_id = i;
+				if (!block_pool_[mip_level].IsUsed(pool_id))
+					return;
+
+				const auto& block = block_pool_[mip_level].Get(pool_id);
+				const auto block_pos_i = CodeToVec3i(block.position_code);
+				const auto block_pos = BlockToWorld(mip_level, FVector(block_pos_i)); assert(k_PoolElemId_invalid != block.cell_brick_addr);
+				auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+
+				// 全Cellについて一様に近傍Cellを探索する. 近傍CellBrickへのアクセスが不要な範囲でも追加のコストがかかっているため高速化の余地あり.
+				{
+					for (int cz = 0; cz < k_cell_brick_reso; ++cz)
+					{
+						for (int cy = 0; cy < k_cell_brick_reso; ++cy)
+						{
+							for (int cx = 0; cx < k_cell_brick_reso; ++cx)
+							{
+								const auto ci = BrickLocalIdToLocalIndex({ cx, cy, cz });
+
+								const auto self_pressure = cell_brick.work_pressure[pressure_flip_][ci];
+
+								FVector accum_pressure_grad = FVector::ZeroVector;
+								// 軸ごとの垂直近傍6つで計算,
+								for (int oni = 0; oni < 6; ++oni)
+								{
+									const auto axis_sign = (oni & 0x01) * 2 - 1;// -1, +1
+									const auto axis_component = (oni >> 1) & 0b11;// 0:x, 1:y, 2:z
+									const auto neighbor_offset = FIntVector((0b001 >> axis_component) & 0x01, (0b010 >> axis_component) & 0x01, (0b100 >> axis_component) & 0x01) * axis_sign;
+
+									auto [n_cellbrick_id, n_pos] = GetNeighborCellBrickIdAndPos(cell_brick, FIntVector(cx, cy, cz) + neighbor_offset);
+
+									if (k_PoolElemId_invalid == n_cellbrick_id)
+									{
+										// 無効Cellの場合. 圧力差無しとする場合は自身のPressureと同値として勾配無し.
+										accum_pressure_grad += FVector(neighbor_offset) * self_pressure;
+									}
+									else
+									{
+										const auto& ref_cellbrick = cell_brick_pool_[mip_level].Get(n_cellbrick_id);
+										const auto nci = BrickLocalIdToLocalIndex(n_pos);
+										// 中央差分勾配のため中心からの相対方向でベクトルとする.
+										accum_pressure_grad += FVector(neighbor_offset) * (ref_cellbrick.work_pressure[pressure_flip_][nci]);
+									}
+								}
+
+								// Pressure.
+								// 圧力の低い方への勾配となるので負.
+								// 中央差分のため 1/2 
+								cell_brick.vel[vel_flip][ci] += -accum_pressure_grad * 0.5f * delta_sec;
+							}
+						}
+					}
+				}
+			};
+
+	#	if 1
+			// 並列.
+			ParallelFor(block_count, pressure_apply_process);
+	#	else
+			// 直列.
+			for (auto i = 0u; i < block_count; ++i)
+			{
+				pressure_apply_process(i);
+			}
+	#	endif
+
+
+
+			// 計測.
+			if (true)
+			{
+				static int s_debug_print_interval_counter = 0;
+				if (0 == (s_debug_print_interval_counter % 30))
+				{
+					// 計算時間
+					size_t progress_time_ms;
+					progress_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - progress_time_start).count();
+					UE_LOG(LogTemp, Display, TEXT("UpdateSystem: %d [microsec]"), progress_time_ms);
+				}
+
+				++s_debug_print_interval_counter;
+				if (1000000 < s_debug_print_interval_counter)
+					s_debug_print_interval_counter = 0;
+			}
+		}
+
+
+
+
+		// パーティクル投入テスト.
+		void AddParticleTest(const FVector& pos, const FVector& vel)
+		{
+			constexpr int k_particle_max_test = 1000;
+			// Cell確保.
+			auto pool_index = particle_pool_flag_.FindAndSetFirstZeroBit();
+			if (INDEX_NONE == pool_index)
+			{
+				// プール最大でクランプ.
+				if (k_particle_max_test <= particle_pool_flag_.Num())
+					return;
+				pool_index = particle_pool_flag_.Num();
+
+				particle_pool_flag_.Add(true);
+				particle_pool_.Add({});
+			}
+			else
+			{
+				particle_pool_flag_[pool_index] = true;// 有効化.
+			}
+			particle_pool_.EmplaceAt(pool_index, ParticleTestData{ pos, 0.0f, vel });
+		}
+		void UpdateParticle(float delta_sec)
+		{
+
+			auto update_process = [&](int i)
+			{
+				if (!particle_pool_flag_[i])
+					return;
+
+				const int mip_level = 0;
+				const int vel_flip = FrontBufferIndex();
+
+				auto candidate_pos = particle_pool_[i].pos + particle_pool_[i].vel * delta_sec;
+
+				// 速度場.
+				const auto block_pos_f = WorldToBlock(0, candidate_pos);
+				const auto block_pos_i = naga::math::FVectorFloorToInt(block_pos_f);
+				auto find_block = grid_hash_[mip_level].find(Vec3iToCode(block_pos_i));
+				if (find_block != grid_hash_[mip_level].end())
+				{
+					// block内frac
+					const auto block_frac = block_pos_f - FVector(block_pos_i);
+					// cell_brick 4x4x4 内のcell座標.
+					const auto local_cell_id = naga::math::FVectorFloorToInt(block_frac * k_cell_brick_reso); assert(k_cell_brick_reso > local_cell_id.X && k_cell_brick_reso > local_cell_id.Y && k_cell_brick_reso > local_cell_id.Z);
+					const auto local_cell_index = BrickLocalIdToLocalIndex(local_cell_id); assert(k_cell_brick_vol3d > local_cell_index);
+					const auto block_id = find_block->second; assert(k_PoolElemId_invalid != block_id);
+
+					auto& block = block_pool_[mip_level].Get(block_id);
+
+					// CellBrick取得.
+					auto& cell_brick = cell_brick_pool_[mip_level].Get(block.cell_brick_addr);
+					// 適当に速度場に寄せる.
+					particle_pool_[i].vel += (cell_brick.vel[vel_flip][local_cell_index] - particle_pool_[i].vel) * FMath::Clamp(5.0f * delta_sec, 0.0f, 1.0f);
+					//particle_pool_[i].vel += cell_brick.vel[vel_flip][local_cell_index] * (1.5f) * delta_sec;
+				}
+
+
+				particle_pool_[i].pos = candidate_pos;
+				particle_pool_[i].life_sec += delta_sec;
+
+				if (20.0f < particle_pool_[i].life_sec)
+				{
+					particle_pool_flag_[i] = false;
+				}
+			};
+
+	#	if 1
+			// 並列.
+			ParallelFor(particle_pool_flag_.Num(), update_process);
+	#	else
+			// 直列.
+			for (auto i = 0u; i < particle_pool_flag_.Num(); ++i)
+			{
+				update_process(i);
+			}
+	#	endif
+		}
+
+
+
+
+		int FrontBufferIndex() const { return flip_; }
+		int BackBufferIndex() const { return 1 - flip_; }
+
+		int flip_ = 0;
+
+		int pressure_flip_ = 0;
+
+		bool is_initialized_ = false;
+
+		// TODO. 直接MapのValueにBlockを持つよりPoolIDを持たせるたいかもしれない, Block自体が小さいなら問題ないかも.
+		std::array<std::unordered_map<Vec3iCode, PoolElemId>, k_num_level> grid_hash_;
+
+		// MipLevel毎のBlockのpool
+		std::array<Pool<Block, 7>, k_num_level> block_pool_ = {};
+
+		// MipLevel毎のCellBrickのPool.
+		std::array<Pool<CellBrick, 7>, k_num_level> cell_brick_pool_ = {};
+
+
+		// テスト用のパーティクル.
+		TBitArray<> particle_pool_flag_ = {};
+		struct ParticleTestData
+		{
+			FVector		pos;
+			float		life_sec;
+			FVector		vel;
+		};
+		TArray<ParticleTestData> particle_pool_;
+
+	};
+
+		
 }

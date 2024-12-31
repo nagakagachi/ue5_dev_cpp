@@ -17,13 +17,6 @@
 #include <cmath>
 
 
-// ----------------------------------------------------------------------------------------------------------------
-	static FIntVector FloorToIntV3(const FVector& v)
-	{
-		return FIntVector(FMath::FloorToInt(v.X), FMath::FloorToInt(v.Y), FMath::FloorToInt(v.Z));
-	}
-// ----------------------------------------------------------------------------------------------------------------
-
 
 //--------------------------------------------------------------------------------------------------------------------------------------
 namespace
@@ -74,12 +67,12 @@ void ANglOccupancyGridTest::BeginPlay()
 		FTransform isttr = {};
 		ismc_dcgrid_->AddInstance(isttr);
 	}
-	/*
+	
 	if (debug_dcgrid_)
 	{
 		dcgrid_.Initialize();
 	}
-	*/
+	
 	if (debug_ocgrid_)
 	{
 		ocgrid_.Initialize(4000.0f);
@@ -196,7 +189,7 @@ void ANglOccupancyGridTest::Tick(float DeltaTime)
 		}
 	}
 
-	/*
+	
 	if(dcgrid_.IsInitialized())
 	{
 		using SamplePointType = decltype(dcgrid_)::SamplePointInfo;
@@ -318,7 +311,7 @@ void ANglOccupancyGridTest::Tick(float DeltaTime)
 			}
 		}
 	}
-	*/
+	
 
 	if (ocgrid_.IsInitialized())
 	{

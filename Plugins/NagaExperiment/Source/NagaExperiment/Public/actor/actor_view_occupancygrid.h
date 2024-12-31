@@ -119,7 +119,7 @@ private:
 private:
 	int debug_raster_index_ = 0;
 
-	//NglSparseGridFluid<1> dcgrid_ = {};
+	naga::NglSparseGridFluid<1> dcgrid_ = {};
 
 	naga::NglOccupancyGrid ocgrid_ = {};
 };
