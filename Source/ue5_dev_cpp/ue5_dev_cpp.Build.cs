@@ -16,16 +16,17 @@ public class ue5_dev_cpp : ModuleRules
 			"InputCore", 
 			"EnhancedInput",
 			
-			"RenderCore",	// for gpgpu.
-			"RHI",			// for gpgpu.
-			
-			"ProceduralMeshComponent", // for VoxelEngine.
 		});
 		
-		if (Target.bBuildEditor)
-		{
-			// Editorモードでの機能用.
-			PublicDependencyModuleNames.AddRange(new string[] { "UnrealEd" });
-		}
+		// -------------------------------------------------------------------------------------
+		// Pluginコードの依存.
+		PublicDependencyModuleNames.AddRange(
+			new string[]
+			{
+				// ... add other public dependencies that you statically link with here ...
+				"NagaExperiment",
+			}
+		);
+		// -------------------------------------------------------------------------------------
 	}
 }

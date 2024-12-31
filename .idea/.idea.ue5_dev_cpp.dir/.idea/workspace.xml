@@ -1,30 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="66e52d23-e393-4f60-8ac8-24a62380f838" name="変更" comment="">
-      <change beforePath="$PROJECT_DIR$/Source/ue5_dev_cpp/ue5_dev_cpp.Build.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Source/ue5_dev_cpp/ue5_dev_cpp.Build.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/ue5_dev_cpp/ue5_dev_cppCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/ue5_dev_cpp/ue5_dev_cppCharacter.cpp" afterDir="false" />
-    </list>
+    <list default="true" id="66e52d23-e393-4f60-8ac8-24a62380f838" name="変更" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 1
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1
+}</component>
   <component name="ProjectId" id="2qZ7MoXlItQlzYIjMifJPubFjU9" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "nodejs_package_manager_path": "npm",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="アプリケーションレベル" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="デフォルトタスク">
@@ -34,6 +31,7 @@
       <option name="presentableId" value="Default" />
       <updated>1734858198371</updated>
       <workItem from="1734858199608" duration="3000" />
+      <workItem from="1735566487999" duration="48000" />
     </task>
     <servers />
   </component>

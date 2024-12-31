@@ -1,0 +1,297 @@
+﻿#pragma once
+
+#include "/Engine/Public/Platform.ush"
+
+#include "/Engine/Private/Common.ush"
+
+/*
+// ディスパッチ数削減バイトニックソートV0
+#define NGL_CS_ENTRYPOINT_DISPATCH_REDUCE_BITONIC_SORT_UINT2_V0 1
+// 乱数でバッファクリア
+#define NGL_CS_ENTRYPOINT_SET_RANDOM_UINT2 1
+*/
+
+
+float CalcRandomV1(float v, int seed)
+{
+    const float d = v + seed;
+    const float s = sin(d);
+    return frac(s * 43758.5453123);
+}
+
+
+#if NGL_CS_ENTRYPOINT_SET_RANDOM_UINT2
+// ソート検証のためのバッファ乱数初期化 デバッグ用
+// ディスパッチは ((sort_element_count/2 + (THREAD_COUNT - 1)) / THREAD_COUNT, 1, 1 )
+#ifndef THREAD_COUNT
+#define THREAD_COUNT 512
+#endif
+
+// ソート対象リソース
+RWStructuredBuffer<uint2> buffer_uav;
+
+// Dispatch数削減版BitonicSortバージョン0
+// 全体のソートステップを同一要素郡で処理できる単位に区切ってDispatchする. 内部ステップはグループバリアで同期する.
+[numthreads(THREAD_COUNT, 1, 1)]
+void SetRandomValue_Uint2(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+    uint buffer_size;
+    uint buffer_stride;
+    buffer_uav.GetDimensions(buffer_size, buffer_stride);
+    if (buffer_size <= dispatch_id.x)
+        return;
+    
+    buffer_uav[dispatch_id.x] = uint2(buffer_size * CalcRandomV1(dispatch_id.x, buffer_size), dispatch_id.x);
+    // 乱数ではなく逆順
+    //buffer_uav[dispatch_id.x] = uint2(buffer_size - dispatch_id.x - 1, dispatch_id.x);
+}
+// ---------------------------------------------------------------------------------------------------------------------------------
+#endif
+
+
+
+#if NGL_CS_ENTRYPOINT_DISPATCH_REDUCE_BITONIC_SORT_UINT2_V0 | 1
+// ディスパッチは ((sort_element_count/2 + (THREAD_COUNT - 1)) / THREAD_COUNT, 1, 1 )
+
+#ifndef THREAD_COUNT
+#define THREAD_COUNT 512
+#endif
+
+// ソート対象リソース
+RWStructuredBuffer<uint2> array_uav;
+// ステップ情報バッファ
+StructuredBuffer<uint3> bitonic_step_info_srv;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// 定数バッファ
+uint cb_sort_element_count;
+uint cb_step_bit0;
+uint cb_step_gap01;
+uint cb_step_bit1;
+uint cb_step_gap12;
+uint cb_start_step;
+uint cb_end_step;
+
+// 共有メモリ
+groupshared uint2 group_memory[THREAD_COUNT*2];
+
+// Dispatch数削減版BitonicSortバージョン0
+// 全体のソートステップを同一要素郡で処理できる単位に区切ってDispatchする. 内部ステップはグループバリアで同期する.
+// 要素数は2の冪乗
+[numthreads(THREAD_COUNT, 1, 1)]
+void BitonicSortDispatchReduceV0_Uint2(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex, uint3 group_id : SV_GroupID)
+{
+    const uint invalid_value = ~uint(0x00);
+    
+    const uint bit0 = cb_step_bit0;
+    const uint gap01 = cb_step_gap01;
+    const uint bit1 = cb_step_bit1;
+    const uint gap12 = cb_step_gap12;
+    const uint start_step = cb_start_step;
+    const uint end_step = cb_end_step;
+
+	// グループ固定値.
+    const uint mask_bit0 = (((uint) 1) << bit0) - 1;
+    const uint mask_bit1 = (((uint) 1) << bit1) - 1;
+    const uint shifted_group_id = group_id.x << bit0;
+    const uint group_bits = (shifted_group_id & mask_bit1) | ((shifted_group_id & ~mask_bit1) << gap12);
+    
+    // 開始ステップ用の情報.
+    int step = start_step;
+    uint3 ij = bitonic_step_info_srv[step];
+    uint shiftI = ij.x;
+    uint j = ij.y;
+    uint localJ = ij.z;
+    uint mask = localJ - 1;
+    uint local_index = (index_in_group & mask) | ((index_in_group & ~mask) << 1);
+    uint thread_bits = (local_index & mask_bit0) | ((local_index & ~mask_bit0) << gap01);
+    uint index = group_bits + thread_bits;
+    
+    // Dispatchの開始ステップから終了ステップで処理する範囲のデータを共有メモリに読み込み.
+    // 更に開始ステップでの入れ替えも同時に実行.
+    uint2 data0 = array_uav[index];
+    uint2 data1 = array_uav[index + j];
+    if (((index >> shiftI) ^ (data1.x < data0.x)) & 1)
+    {
+        group_memory[local_index] = data1;
+        group_memory[local_index + localJ] = data0;
+    }
+    else
+    {
+        group_memory[local_index] = data0;
+        group_memory[local_index + localJ] = data1;
+    }
+    
+    // 開始ステップ+1から終了ステップ-1までの処理ループ.
+    // ループを抜ける際に一時変数に終了ステップの情報を格納して抜ける.
+    while (true)
+    {
+        ++step;
+        ij = bitonic_step_info_srv[step];
+        shiftI = ij.x;
+        localJ = ij.z;
+        mask = localJ - 1;
+        thread_bits = index_in_group;
+        local_index = (thread_bits & mask) | ((thread_bits & ~mask) << 1);
+        GroupMemoryBarrierWithGroupSync();
+        // このステップでの入れ替え対象の値を一時変数に格納
+        data0 = group_memory[local_index];
+        data1 = group_memory[local_index + localJ];
+        if (step >= end_step)
+        {
+            // 終了ステップの場合は一時変数に格納するだけで入れ替えはせずに抜ける. 最後の入れ替えはループを抜けた後にUAVへの書き戻しと同時に実行.
+            break;
+        }
+        
+        // 入れ替え
+        if (((index >> shiftI) ^ (data1.x < data0.x)) & 1)
+        {
+            group_memory[local_index] = data1;
+            group_memory[local_index + localJ] = data0;
+        }
+    }
+    
+    // 最後のループで一時変数に格納した終了ステップの情報で最後の入れ替えとUAVへの書き戻しを実行.
+    thread_bits = (local_index & mask_bit0) | ((local_index & ~mask_bit0) << gap01);
+    index = group_bits + thread_bits;
+    j = ij.y;
+    if (((index >> shiftI) ^ (data1.x < data0.x)) & 1)
+    {
+        array_uav[index] = data1;
+        array_uav[index + j] = data0;
+    }
+    else
+    {
+        array_uav[index] = data0;
+        array_uav[index + j] = data1;
+    }
+}
+// ---------------------------------------------------------------------------------------------------------------------------------
+#endif
+
+/*
+    事前計算データの構築メモ.
+
+    // 各ディスパッチで実行するステップの範囲やディスパッチで固定のパラメータ.
+    test_sort_dispatch_param_array_;
+    // 各ステップでのデータ読み取りやバイトニックソートを同一グループ内で閉じて実行するためのインデックス計算用事前データ.
+    test_sort_step_info_array_;
+
+
+    const auto sort_element_count = [要素数];// 2の冪乗の必要あり.
+	const auto sort_cs_thread_count = [スレッドグループ数];
+	const auto m_local_bit_count = NglMathUtil::LeastSignificantBit(sort_cs_thread_count) + 1;
+
+	//グループスレッドが連続したn-byteへアクセスするように事前計算データを補正する.
+	// SharedMemory利用版ではここでlinear_access_maskが7になるようにしないとソート結果がほんの少し失敗する. グループスレッド数512, 要素数2048, linear_access_maskが0だと発生. 要調査.
+	const uint32_t linear_access_byte_size = 64; // 連続アクセスバイトサイズ.
+	// 連続アクセスバイトサイズを要素数換算してマスク作成.
+	const uint32_t linear_access_mask = (uint32_t)(linear_access_byte_size / sizeof(NglUint2) - 1);
+
+    // 前ステップをいくつのディスパッチに分割するか
+	uint32_t dispatch_count = 0;
+
+	// パラメータバッファとディスパッチ単位定数バッファの値を事前計算.
+	{
+		// 基本の情報を設定
+		int step_index = 0;
+		for (int i = 1; i < sort_element_count; i = i << 1)
+		{
+			for (uint32_t j = i; j > 0; j = j >> 1)
+			{
+				proxy->test_sort_step_info_array_[step_index].x = NglMathUtil::LeastSignificantBit(i << 1);
+				proxy->test_sort_step_info_array_[step_index].y = j;
+				proxy->test_sort_step_info_array_[step_index].z = 0;// ディスパッチ分割方法によって変わるので後段で有効な値が設定される
+
+				proxy->test_sort_sub_step_id_array_[step_index] = j;
+				step_index++;
+			}
+		}
+	}
+	{
+
+		// ディスパッチ単位毎にパラメータを計算して格納
+		uint32_t current_mask = linear_access_mask;// 0;
+		uint32_t start_stage = 0;
+		for (int step_index = 0; step_index != sort_step_count; step_index++) {
+			current_mask |= proxy->test_sort_sub_step_id_array_[step_index];
+			if ((step_index == (sort_step_count - 1)) || (NglMathUtil::BitCount(current_mask | proxy->test_sort_sub_step_id_array_[step_index + 1]) > m_local_bit_count))
+			{
+				{
+					//adjust granurarity when working set bits are not fully populated
+					const uint32_t group_scale = NglMathUtil::BitCount(current_mask);
+					uint32_t l = 1;
+					for (int k = group_scale; k < m_local_bit_count; k++)
+					{
+						while ((l & current_mask) != 0)
+							l <<= 1;
+						current_mask |= l;
+					}
+				}
+
+				//setup constants
+				//int bit0, bit1, bit2;
+				const uint32_t mask = current_mask | (sort_element_count << 1);
+				const int bit0 = NglMathUtil::LeastSignificantBit(~mask);
+				const int bit1 = NglMathUtil::LeastSignificantBit(mask & ~((((uint32_t)1) << bit0) - 1));
+				const int bit2 = NglMathUtil::LeastSignificantBit(~mask & ~((((uint32_t)1) << bit1) - 1));
+
+				// ディスパッチ単位用情報
+				auto sort_dispatch_param = &proxy->test_sort_dispatch_param_array_[dispatch_count];
+				++dispatch_count;
+				sort_dispatch_param->bit0 = bit0;
+				sort_dispatch_param->gap01 = bit1 - bit0;
+				sort_dispatch_param->bit1 = bit1;
+				sort_dispatch_param->gap12 = bit2 - bit1;
+				sort_dispatch_param->start_step = start_stage;
+				sort_dispatch_param->end_step = step_index;
+
+				// zに事前計算の値を設定.
+				for (int k = start_stage; k <= step_index; k++)
+				{
+					const uint32_t j = proxy->test_sort_sub_step_id_array_[k];
+					const uint32_t bit_mask = ((uint32_t)1 << bit1) - 1;
+					proxy->test_sort_step_info_array_[k].z = (j & bit_mask) | ((j & ~bit_mask) >> (bit1 - bit0));
+				}
+
+				current_mask = linear_access_mask;// 0;
+				start_stage = step_index + 1;
+			}
+		}
+        // 作成した事前計算データを proxy->test_sort_step_info_buffer_ にマップしてSrvとしてシェーダから利用できるようにする.
+	}
+
+
+
+    ディスパッチ時は以下のように実行する.
+	for (uint32_t dispatch_index = 0; dispatch_index < dispatch_count; ++dispatch_index)
+	{
+		// バリア
+		RHICmdList.TransitionResource(EResourceTransitionAccess::ERWBarrier, EResourceTransitionPipeline::EComputeToCompute, proxy->test_sort_buffer_.GetUav());
+
+		const auto* dispatch_param = &proxy->test_sort_dispatch_param_array_[dispatch_index];
+
+		RHICmdList.SetComputeShader(dispatch_reduce_bitonic_sort_cs->GetComputeShader());
+        
+        // ソート対象のUAV
+		SetUAVParameter(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->array_uav, proxy->test_sort_buffer_.GetUav());
+
+        // 事前計算したステップ毎の情報をSRVでまとめて設定
+		SetSRVParameter(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->bitonic_step_info_srv, proxy->test_sort_step_info_buffer_.GetSrv());
+
+        // 
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_sort_element_count, sort_element_count);
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_start_step, dispatch_param->start_step);
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_end_step, dispatch_param->end_step);
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_step_bit0, dispatch_param->bit0);
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_step_bit1, dispatch_param->bit1);
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_step_gap01, dispatch_param->gap01);
+		SetShaderValue(RHICmdList, dispatch_reduce_bitonic_sort_cs->GetComputeShader(), dispatch_reduce_bitonic_sort_cs->cb_step_gap12, dispatch_param->gap12);
+
+		const int CsThreadCount = dispatch_reduce_bitonic_sort_cs->CS_DISPATCH_THREAD_COUNT();
+		// 1スレッドが2要素担当するためそれを考慮してディスパッチ
+		DispatchComputeShader(RHICmdList, *dispatch_reduce_bitonic_sort_cs, (sort_element_count / 2 + (CsThreadCount - 1)) / CsThreadCount, 1, 1);
+	}
+
+
+*/

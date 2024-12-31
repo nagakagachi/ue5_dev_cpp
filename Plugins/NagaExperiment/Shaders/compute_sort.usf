@@ -1,0 +1,184 @@
+﻿#pragma once
+
+#include "/Engine/Public/Platform.ush"
+
+#include "/Engine/Private/Common.ush"
+
+
+
+/*
+    CS_TILED_TRANSPOSE_BITONIC_SORT_CS
+
+    CS_TILED_TRANSPOSE_CS
+*/
+
+/*
+    Bitonic Sort Shader.
+        THREAD_COUNT以上のサイズのバッファに対してはtransposeシェーダと併用してソートをする.
+*/
+
+
+#if CS_TILED_TRANSPOSE_BITONIC_SORT_CS | 0
+/*
+    bitonic sort shader
+*/
+
+// メインの起動スレッド数
+#ifndef THREAD_COUNT
+#define THREAD_COUNT 1024
+#endif
+
+// ディスパッチサイズよりも小さいバッファサイズを許容するか. 許容する場合はサイズチェック処理が追加される.
+#ifndef ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+#define ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE 1
+#endif
+
+// ソート対象リソース
+RWStructuredBuffer<uint2> array_uav;
+StructuredBuffer<uint2> array_srv;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// 定数バッファ
+uint cb_bitonic_sort_block_size; // バイトニックソートのブロックサイズ, 2, 4, 8, 16
+uint cb_bitonic_sort_order_mask; // バイトニックソートのブロック毎のソート向きマスク 2-> 0<1 2>3 4<5 6>7, 4-> 0<1<2<3 4>5>6>7
+
+// 共有メモリ
+groupshared uint key_group_memory[THREAD_COUNT];
+groupshared uint value_group_memory[THREAD_COUNT];
+
+// バイトニックソート. inplace.
+// ブロックサイズ cb_bitonic_sort_block_size まで対応. バッファをcb_bitonic_sort_block_size*N行列とみなして転置すればcb_bitonic_sort_block_size*cb_bitonic_sort_block_sizeのサイズまで対応可能.
+[numthreads(THREAD_COUNT, 1, 1)]
+void BitonicSort_Uint2(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+		// 1024未満の要素数を許容する(遅くなるはずなので注意
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	uint buffLen = 0;
+	uint buffStride = 0;
+	array_uav.GetDimensions(buffLen, buffStride);
+#endif
+    
+
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	if ( buffLen > dispatch_id.x )
+#endif
+    {
+        // 共有メモリに読み込み
+        uint2 elem = array_uav[dispatch_id.x];
+        key_group_memory[index_in_group] = elem.x;
+        value_group_memory[index_in_group] = elem.y;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    uint order_flag = (0 != (cb_bitonic_sort_order_mask & dispatch_id.x));
+    
+    // 共有メモリ上でバイトニックソートフェーズ
+    for (uint j = cb_bitonic_sort_block_size >> 1; j > 0; j >>= 1)
+    {
+        // オーダーマスクによってブロックごとに昇順降順を切り替えて入れ替え
+        uint order = (key_group_memory[index_in_group & ~j] <= key_group_memory[index_in_group | j]);
+        uint select_index = (order == order_flag) ? (index_in_group ^ j) : (index_in_group);
+
+        uint2 result = uint2(key_group_memory[select_index], value_group_memory[select_index]);
+
+        // 計算完了同期
+        GroupMemoryBarrierWithGroupSync();
+        // 書き込み
+        key_group_memory[index_in_group] = result.x;
+        value_group_memory[index_in_group] = result.y;
+
+        // 書き込み同期
+        GroupMemoryBarrierWithGroupSync();
+    }
+    
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	if ( buffLen > dispatch_id.x )
+#endif
+    {
+        // 書き戻し
+        array_uav[dispatch_id.x] = uint2(key_group_memory[index_in_group], value_group_memory[index_in_group]);
+    }
+}
+// ---------------------------------------------------------------------------------------------------------------------------------
+#endif // CS_TILED_TRANSPOSE_BITONIC_SORT_CS
+
+
+
+#if CS_TILED_TRANSPOSE_CS
+/*
+    bitonic sort shader を共有メモリサイズより大きいサイズのバッファへ適用するための転置シェーダ
+*/
+
+// ブロック単位転置のブロックサイズ, TRANSPOSE_TILE_SIZE*TRANSPOSE_TILE_SIZE が転置シェーダのグループスレッド数. (PS4では32x32よりも16x16の方が速かった).
+#ifndef TRANSPOSE_TILE_SIZE
+#define TRANSPOSE_TILE_SIZE 16
+#endif
+// ブロック単位転置で対象行列のサイズがブロックサイズの倍数ではない場合を許容する
+#ifndef ARROW_TRANSPOSE_MATRIX_NEQ_MULTIPLE_OF_TILE
+#define ARROW_TRANSPOSE_MATRIX_NEQ_MULTIPLE_OF_TILE 1
+#endif
+
+// タイルベースではない単純転置モード
+#ifndef NAIVE_MODE
+#define NAIVE_MODE 0
+#endif
+
+// ソート対象リソース
+RWStructuredBuffer<uint2> array_uav;
+StructuredBuffer<uint2> array_srv;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// 定数バッファ
+uint cb_transpose_matrix_witdh;    // 転置対象の行列の幅
+uint cb_transpose_matrix_height;   // 転置対象の行列の高
+
+// 共有メモリ
+groupshared uint2 transpose_group_memory[TRANSPOSE_TILE_SIZE * TRANSPOSE_TILE_SIZE];
+
+// 転置. array_savからarray_uavへ出力. ディスパッチは ( cb_transpose_matrix_witdh, num/cb_transpose_matrix_witdh, 1 ) のように行列のサイズディスパッチ
+// 構造化バッファへの読み書きアクセスをなるべく連続メモリにするためブロック単位での転置処理をする.
+[numthreads(TRANSPOSE_TILE_SIZE, TRANSPOSE_TILE_SIZE, 1)]
+void Transpose_Uint2(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex, uint3 group_id : SV_GroupID)
+{
+    uint2 base_pos = group_id.xy * uint2(TRANSPOSE_TILE_SIZE, TRANSPOSE_TILE_SIZE);
+    uint2 src_pos = base_pos + id_in_group.xy;
+    uint2 dst_pos = base_pos.yx + id_in_group.yx;
+
+    // 対象の縦横サイズがブロックサイズの倍数ぴったりではない場合の対応
+    const bool is_enable_thread = (cb_transpose_matrix_witdh > src_pos.x) && (cb_transpose_matrix_height > src_pos.y);
+
+#if NAIVE_MODE
+    
+#if ARROW_TRANSPOSE_MATRIX_NEQ_MULTIPLE_OF_TILE
+    if (is_enable_thread)
+#endif
+    {
+        array_uav[dst_pos.y * cb_transpose_matrix_height + dst_pos.x] = array_srv[src_pos.y * cb_transpose_matrix_witdh + src_pos.x];
+    }
+
+#else
+
+#if ARROW_TRANSPOSE_MATRIX_NEQ_MULTIPLE_OF_TILE
+	// グループ内スレッド番号が転置ブロック幅の中のスレッドだけ実行 あんまり効率的じゃないかもだけど
+    if (is_enable_thread)
+#endif
+    {
+        // ブロック単位で連続したアドレスから共有メモリへ読み込み
+        transpose_group_memory[id_in_group.x * TRANSPOSE_TILE_SIZE + id_in_group.y] = array_srv[src_pos.y * cb_transpose_matrix_witdh + src_pos.x];
+    }
+    
+    GroupMemoryBarrierWithGroupSync();
+    
+#if ARROW_TRANSPOSE_MATRIX_NEQ_MULTIPLE_OF_TILE
+    if (is_enable_thread)
+#endif
+    {
+        // 共有メモリから転置して読み取ってブロック単位で連続したアドレスで書き込み
+        array_uav[dst_pos.y * cb_transpose_matrix_height + dst_pos.x] = transpose_group_memory[id_in_group.x * TRANSPOSE_TILE_SIZE + id_in_group.y];
+    }
+
+
+#endif
+}
+// ---------------------------------------------------------------------------------------------------------------------------------
+#endif // CS_TILED_TRANSPOSE_C

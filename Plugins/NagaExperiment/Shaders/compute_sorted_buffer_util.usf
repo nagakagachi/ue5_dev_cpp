@@ -1,0 +1,431 @@
+﻿#pragma once
+
+#include "/Engine/Public/Platform.ush"
+
+#include "/Engine/Private/Common.ush"
+
+#include "compute_neighbor_util.usf"
+
+/*
+    ソート済みバッファから情報を抽出して別のバッファに書き出すシェーダ
+
+    in  : array_srv
+            xでソート済みのuint2バッファ
+    out : hash_msb_start_index_32_uav
+            Keyでソートされたarray_srv の32bi uint keyの各ビットが初めてMSB(MostSignificantBit)になるインデックスを格納する32要素バッファ.
+            このバッファを参照することで、例えば最上位bitが1になる最初のインデックスがわかるので最上位bitを未使用フラグとしておけば未使用要素へのアクセスが簡単になる
+            バッファ中で一つもそのbitがMostSignificantBitにならなかった場合は0xffffffffとする
+
+*/
+
+
+// メインの起動スレッド数
+#ifndef THREAD_COUNT
+#define THREAD_COUNT 1024
+#endif
+
+// ディスパッチサイズよりも小さいバッファサイズを許容するか. 許容する場合はサイズチェック処理が追加される.
+#ifndef ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+#define ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE 0
+#endif
+
+
+
+
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------
+// ソート済みKey-Valueバッファの情報格納用UAVをクリアする
+// 32要素に対してディスパッチ
+#if CS_CLEAR_SORTED_BUFFER_INFO || 0
+
+// ソート済みバッファのKeyの各MSB開始インデックスバッファ. 32要素.
+// ソート済みのKeyバッファについて各ビットが初めて1になるインデックスを書き込む. 存在しない場合は 0xffffffff.
+RWStructuredBuffer<uint> hash_msb_start_index_32_uav;
+
+// 定数バッファ
+// クリア値
+uint cb_clear_value;
+
+[numthreads(32, 1, 1)]
+void ClearSortedBufferInfo(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	uint buffLen = 0;
+	uint buffStride = 0;
+    hash_msb_start_index_32_uav.GetDimensions(buffLen, buffStride);
+
+	if ( buffLen <= dispatch_id.x )
+        return;
+#endif
+
+    //const uint invalid_value = ~uint(0x00);
+    hash_msb_start_index_32_uav[dispatch_id.x] = cb_clear_value;
+}
+#endif
+// ------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------
+// ソート済みKey-Valueバッファから情報生成
+#if CS_GEN_SORTED_BUFFER_INFO || 0
+
+// ソート済みバッファ
+StructuredBuffer<uint2> array_srv;
+// ソート済みバッファのKeyの各MSB開始インデックスバッファ. 32要素.
+// ソート済みのKeyバッファについて各ビットが初めて1になるインデックスを書き込む. 存在しない場合は 0xffffffff.
+RWStructuredBuffer<uint> hash_msb_start_index_32_uav;
+
+// 作業用共有メモリ
+// スレッドグループの担当範囲 + 1 を読み込んで利用する
+// 参照するのはKeyだけなので uint
+groupshared uint group_memory_key[THREAD_COUNT + 1];
+// msbなので符号付
+groupshared int group_memory_key_msb[THREAD_COUNT + 1];
+// 各グループがMSB開始インデックスをいったん書き込む作業バッファ
+groupshared uint group_memory_key_msb_start[32];
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void GenSortedBufferInfo(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+    const uint invalid_value = ~uint(0x00);
+
+    // バッファサイズ取得. GetDimensionsのランタイムコストってどうなんだろう.
+	uint buffLen = 0;
+	uint buffStride = 0;
+    array_srv.GetDimensions(buffLen, buffStride);
+
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	if ( buffLen > dispatch_id.x )
+#endif
+    {
+        // TODO read
+        // Keyを格納
+        group_memory_key[index_in_group] = array_srv[dispatch_id.x].x;
+        // 後で使うのでMSBも計算して共有メモリに格納
+        group_memory_key_msb[index_in_group] = MostSignificantBit(group_memory_key[index_in_group]);
+        
+        // グループ最後のスレッドは +1 の要素の読み取りを担当する
+        if (THREAD_COUNT - 1 == index_in_group)
+        {
+            // バッファの末尾の可能性があるのでチェックしている. 末尾の場合は不正値
+            bool valid = (buffLen - 1 > dispatch_id.x);
+            // Key
+            group_memory_key[THREAD_COUNT] = (valid) ? array_srv[dispatch_id.x + 1].x : invalid_value;
+            // MSB
+            group_memory_key_msb[THREAD_COUNT] = (valid) ? MostSignificantBit(group_memory_key[THREAD_COUNT]) : -1;
+        }
+    }
+    
+    // 出力作業バッファのクリア
+    if (32 > index_in_group)
+    {
+        group_memory_key_msb_start[index_in_group] = invalid_value;
+    }
+    
+    // グループ同期
+    GroupMemoryBarrierWithGroupSync();
+    
+    // グループごとにMSB開始インデックスチェック
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	if ( buffLen > dispatch_id.x )
+#endif
+    {
+        // msbが0以上(どこかのビットが立っている)で、次の要素のmsbよりもちいさい場合. ( 0-31 )
+        if (0 == dispatch_id.x && 0 <= group_memory_key_msb[index_in_group])
+        {
+            // 最初の要素は特殊対応
+            group_memory_key_msb_start[group_memory_key_msb[index_in_group]] = 0;
+        }
+        if (group_memory_key_msb[index_in_group] < group_memory_key_msb[index_in_group + 1])
+        {
+            // msbの値(0-31)の位置にmsbがその値になる最初の要素のインデックスを書き込み
+            group_memory_key_msb_start[group_memory_key_msb[index_in_group + 1]] = dispatch_id.x + 1;
+        }
+    }
+    
+    // グループ同期
+    GroupMemoryBarrierWithGroupSync();
+
+    // 各グループの先頭32スレッドが代表して共有メモリからUAVに書き込みをする
+    // 書き込みは共有メモリ内でMSBの変化があったインデックスのみであるため、特に排他処理をしなくても書き込み対象の要素にアクセスするのは1スレッドだけのはず.
+    if (32 > index_in_group)
+    {
+        // スレッド全体がこの条件をチェックするが、条件を通るのはそれぞれ1スレッドだけのはずなので問題ない(と思う)
+        if (invalid_value != group_memory_key_msb_start[index_in_group])
+        {
+            hash_msb_start_index_32_uav[index_in_group] = group_memory_key_msb_start[index_in_group];
+        }
+    }
+}
+#endif
+// ------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// ソート済みハッシュバッファの次の要素のハッシュとの差分バッファを生成. ExclusiveScan対象バッファの生成に使う.
+#if CS_GEN_SORTED_BUFFER_KEY_DIFF || 0
+// エンティティのハッシュインデックス情報バッファ. 
+StructuredBuffer<uint2> array_srv;
+
+// ハッシュ差分バッファUAV
+RWStructuredBuffer<uint> out_uav;
+
+// 作業用共有メモリ
+groupshared uint shared_memory[THREAD_COUNT + 1];
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void GenSortedBufferKeyDiff(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+    uint buffLen = 0;
+    uint buffStride = 0;
+    array_srv.GetDimensions(buffLen, buffStride);
+
+    shared_memory[index_in_group] = array_srv[dispatch_id.x].x;
+		// 末尾要素
+    if (THREAD_COUNT - 1 == index_in_group)
+    {
+        shared_memory[index_in_group + 1] = buffLen - 1 > dispatch_id.x ? array_srv[dispatch_id.x + 1].x : array_srv[dispatch_id.x].x;
+    }
+		// バリア
+    GroupMemoryBarrierWithGroupSync();
+
+    // ソート済みのはずなので自分より次の要素が大きくなったら切り替わり位置として自分の出力先に 1 を書き込み
+    out_uav[dispatch_id.x] = (shared_memory[ index_in_group] < shared_memory[index_in_group + 1]);
+}
+
+#endif
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Group Exclusive Scan. 1スレッドグループ単位でExclusive ScanによるPrefixSumを計算する. バッファは2の冪でなければならない.
+// また, ブロックよりも大きいサイズのバッファに対してScanを完了するため補助バッファに各ブロックのupフェーズの最後の要素を格納する.
+// http://developer.download.nvidia.com/compute/cuda/1_1/Website/projects/scan/doc/scan.pdf
+// バンクコンフリクト対応無し.
+#if CS_EXCLUSIVE_SCAN_PER_GROUP || 0
+// Scan対象のバッファ. 
+StructuredBuffer<uint> array_srv;
+
+// Group単位Scanの出力先. 1スレッドグループのスレッド数*2の要素単位でScanをした結果を書き込む.
+RWStructuredBuffer<uint> scan_per_group_uav;
+// ブロックごとの合計値を格納する補助バッファ
+RWStructuredBuffer<uint> block_sums_uav;
+
+// 作業用共有メモリ
+groupshared uint shared_memory[THREAD_COUNT*2];
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void ExclusiveScanPerGroup(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex, uint3 group_id : SV_GroupID)
+{
+    uint buffLen = 0;
+    uint buffStride = 0;
+    array_srv.GetDimensions(buffLen, buffStride);
+    
+    // 1グループが担当する要素数
+    const int num_target_elem = THREAD_COUNT * 2;
+    const uint read_write_index = dispatch_id.x * 2;
+
+    uint offset = 1;
+
+    // ----------------------------------------------------------------------------------------------------
+    // 共有メモリに読み込み
+    shared_memory[index_in_group * 2] = (read_write_index < buffLen) ? array_srv[read_write_index] : 0;
+    shared_memory[index_in_group * 2 + 1] = (read_write_index < buffLen) ? array_srv[read_write_index + 1] : 0;
+    // ----------------------------------------------------------------------------------------------------
+
+    // Up
+    for (int d = (num_target_elem>>1); d > 0; d >>= 1)
+    {
+        // バリア
+        GroupMemoryBarrierWithGroupSync();
+        if (index_in_group < d)
+        {
+            // ----------------------------------------------------------------------------------------------------
+            int i0 = offset * (2 * index_in_group + 1) - 1;
+            int i1 = offset * (2 * index_in_group + 2) - 1;
+            // ----------------------------------------------------------------------------------------------------
+
+            shared_memory[i1] += shared_memory[i0];
+        }
+        offset <<= 1;
+    }
+    
+    // ----------------------------------------------------------------------------------------------------
+    // 最終要素をクリア
+    if ( index_in_group == 0 )
+    {
+        // クリアする前に補助バッファにこのブロックの合計を書き込む
+        block_sums_uav[group_id.x] = shared_memory[num_target_elem - 1];
+        // クリア
+        shared_memory[num_target_elem - 1] = 0;
+    }
+    // ----------------------------------------------------------------------------------------------------
+    
+    // Down
+    for (int d = 1; d < num_target_elem; d <<= 1)
+    {
+        offset >>= 1;
+        // バリア
+        GroupMemoryBarrierWithGroupSync();
+
+        if ( index_in_group < d )
+        {
+            // ----------------------------------------------------------------------------------------------------
+            int i0 = offset * (2 * index_in_group + 1) - 1;
+            int i1 = offset * (2 * index_in_group + 2) - 1;
+            // ----------------------------------------------------------------------------------------------------
+
+            uint t = shared_memory[i0];
+            shared_memory[i0] = shared_memory[i1];
+            shared_memory[i1] += t;
+        }
+    }
+    
+    // バリア
+    GroupMemoryBarrierWithGroupSync();
+
+    // ストア
+    if (read_write_index < buffLen)
+    {
+        scan_per_group_uav[read_write_index] = shared_memory[index_in_group * 2];
+        scan_per_group_uav[read_write_index + 1] = shared_memory[index_in_group * 2 + 1];
+    }
+}
+#endif
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// ブロック単位Scanのブロック末尾要素抽出バッファに対するScanをもとのブロック単位Scanバッファに足しこんで完全なScan結果とする.
+#if CS_COMPLETE_BLOCK_EXCLUSIVE_SCAN || 0
+
+// ブロックの最終要素を集めたバッファに対してScanした結果のバッファ. 
+StructuredBuffer<uint> upper_scan_srv;
+
+// Group単位Scanの出力先. 1スレッドグループのスレッド数*2の要素単位でScanをした結果を書き込む.
+RWStructuredBuffer<uint> array_uav;
+
+// 定数バッファ
+// ブロック単位Scanのブロックサイズ
+uint cb_block_size;
+
+// 上位のScan結果をもとにブロック単位Scanバッファを完全なScanに変換する
+[numthreads(THREAD_COUNT, 1, 1)]
+void CompleteBlockExclusiveScan(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+    uint buffLen = 0;
+    uint buffStride = 0;
+    array_uav.GetDimensions(buffLen, buffStride);
+    
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+    if (buffLen <= dispatch_id.x)
+        return;
+#endif
+    
+    // 自分がどのブロックか
+    uint block_id = dispatch_id.x / cb_block_size;
+    // 0ブロックよりも後ろのブロックは上位スキャンの自分のブロックの一つ前の値を足しこむ
+    //if (1 <= block_id)
+    {
+        array_uav[dispatch_id.x] += upper_scan_srv[block_id];
+
+    }
+}
+#endif
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// 
+#if CS_GEN_ENABLE_HASH_BUFFER || 0
+// ソート済みハッシュ値インデックスバッファ.
+// 0ベースで何番目のハッシュ値が格納されているかを示すバッファ
+StructuredBuffer<uint> hash_scan_srv;
+
+// ソート済みハッシュインデックスバッファ
+StructuredBuffer<uint2> hash_id_srv;
+
+
+// 有効ハッシュ値の情報
+// 0番要素には有効ハッシュの数が書き込まれているので i要素は0ベースでi-1番目のハッシュ値の情報となる.
+// enable_hash_info_uav[i].x : i-1番目の有効なハッシュ値
+// enable_hash_info_uav[i].y : i-1番目の有効なハッシュ値が開始するインデックス
+RWStructuredBuffer<uint2> enable_hash_info_uav;
+
+
+// 作業用共有メモリ
+groupshared uint shared_memory[THREAD_COUNT + 1];
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void GenEnableHashInfoBuffer(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+    const uint invalid_value = ~uint(0x00);
+
+    uint buffLen = 0;
+    uint buffStride = 0;
+    hash_scan_srv.GetDimensions(buffLen, buffStride);
+    
+    shared_memory[index_in_group + 1] = hash_scan_srv[dispatch_id.x];
+    // 先頭要素
+    if (0 == index_in_group)
+    {
+        // 0番の前には無効要素を入れておく
+        shared_memory[0] = 0 < dispatch_id.x ? hash_scan_srv[dispatch_id.x - 1] : invalid_value;
+    }
+	// バリア
+    GroupMemoryBarrierWithGroupSync();
+
+
+    // 前の要素と異なる場合はハッシュの開始インデックスなので書き込み
+    if (shared_memory[index_in_group] != shared_memory[index_in_group + 1])
+    {
+        uint hash_kind_index = shared_memory[index_in_group + 1];
+
+        // i+1 に i番目のハッシュ値情報を格納.
+        enable_hash_info_uav[hash_kind_index + 1].x = hash_id_srv[dispatch_id.x].x;
+        enable_hash_info_uav[hash_kind_index + 1].y = dispatch_id.x;
+    }
+
+    // 0番目には有効なハッシュの数を書き込み.
+    // 担当スレッドは最後のスレッド
+    if (buffLen == dispatch_id.x+1)
+    {
+        // x,y 両方にいれておく.
+        enable_hash_info_uav[0].x = shared_memory[index_in_group + 1] + 1;
+        enable_hash_info_uav[0].y = shared_memory[index_in_group + 1] + 1;
+    }
+}
+
+#endif
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------
+// uint2バッファをクリア
+#if CS_CLEAR_UINT2_BUFFER || 0
+
+RWStructuredBuffer<uint2> out_uav;
+
+// 定数バッファ
+// クリア値
+uint2 cb_clear_value;
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void ClearUint2Buffer(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+#if ARROW_BUFFER_SIZE_LESS_THAN_DISPATCH_THREAD_SIZE
+	uint buffLen = 0;
+	uint buffStride = 0;
+    out_uav.GetDimensions(buffLen, buffStride);
+
+	if ( buffLen <= dispatch_id.x )
+        return;
+#endif
+
+    //const uint invalid_value = ~uint(0x00);
+    out_uav[dispatch_id.x] = cb_clear_value;
+}
+#endif
+// ------------------------------------------------------------------------------------------------------------------------------------------------

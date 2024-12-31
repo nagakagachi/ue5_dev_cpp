@@ -1,0 +1,29 @@
+﻿
+#include "/Engine/Public/Platform.ush"
+
+// ComputeShaderによる頂点バッファ書き換えのサンプル用
+
+// Dispatch 1024, 1, 1
+
+// Position 頂点バッファ. 十分なサイズ確保されているものとする.
+// UE4のメッシュレンダリングに乗せる場合は Position, UV, TangentX, TangentY, TangentZ, (必要ならColor) が必要なのでそれらも操作することになりそう.
+RWStructuredBuffer<float3> vtx_pos_buffer;
+
+
+float4 uniformParameter0;
+
+[numthreads(1024, 1, 1)]
+void MainCS(int3 dispatch_id : SV_DispatchThreadID)
+{
+    // 適当にCSで頂点を動かすテスト
+    uint src_num;
+    uint src_stride;
+    vtx_pos_buffer.GetDimensions(src_num, src_stride);
+    // 一応範囲チェック
+    if (src_num <= dispatch_id.x)
+        return;
+
+    float sin_offset = float(dispatch_id.x % 3) / 3;
+    vtx_pos_buffer[dispatch_id.x].z += sin(uniformParameter0.x + sin_offset * 2) * 0.5;
+
+}

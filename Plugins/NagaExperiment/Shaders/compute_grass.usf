@@ -1,0 +1,808 @@
+﻿#pragma once
+
+#include "/Engine/Public/Platform.ush"
+
+#include "/Engine/Private/Common.ush"
+
+#include "compute_neighbor_util.usf"
+
+// Procedural GrassをCSでやってみるテスト
+/*
+// Position -> float
+// Color -> uint32 8bit-color
+// UV -> float2
+// Tangents -> snorm8*4
+
+// Dispatch 1024, 1, 1
+// tangentとnormalのバッファがそれぞれ snorm な 8bit*4 にパックされている場合.
+// バッファ上の配置は tangent(x8y8z8w8) normal(x8y8z8w8) tangent(x8y8z8w8) normal(x8y8z8w8) ... となる
+*/
+
+/*------------------------------------------------------------------------------
+	Compile time parameter:
+
+		THREAD_COUNT - The number of threads to launch per workgroup. default 1024.
+------------------------------------------------------------------------------*/
+#ifndef THREAD_COUNT
+#define THREAD_COUNT 1024
+#endif
+
+
+/*------------------------------------------------------------------------------
+	Compile time parameter:
+
+		CS_COMPUTE_GRASS_UPDATE 1       : ComputeGrassの更新CSとしてコンパイルするマクロ
+
+        CS_COMPUTE_GRASS_GEN_MESH 1     : ComputeGrassのメッシュ生成CSとしてコンパイルするマクロ
+
+        CS_COMPUTE_GRASS_GEN_COUNT 1    : ComputeGrassのカウントバッファ構築CSとしてコンパイルするマクロ
+
+        CS_COMPUTE_GRASS_APPEND_DIRECT 1    : ComputeGrassのインスタンスをパラメータ直接指定で追加するCSとしてコンパイルするマクロ
+------------------------------------------------------------------------------*/
+
+
+// float4 を  snorm byte4 にパック
+uint PackSnorm8bitFromFloat4(float4 Input)
+{
+    //const int4 IntVal = int4(round(Input * 255.0f));
+    const int4 IntVal = int4(round(Input * 127.0f));
+    uint4 UIntVal = (IntVal & 0x7f);
+    // 符号部
+    uint4 s = (0 > IntVal);
+    UIntVal = UIntVal | (s << 7);
+    uint pack = (UIntVal.x) | (UIntVal.y << 8) | (UIntVal.z << 16) | (UIntVal.w << 24);
+    return pack;
+}
+// float3 を  snorm byte4 にパック, w=0
+uint PackSnorm8bitFromFloat4(float3 Input)
+{
+    return PackSnorm8bitFromFloat4(float4(Input, 0));
+}
+// float4 を  unorm byte4 にパック
+uint PackUnorm8bitFromFloat4(float4 Input)
+{
+    const int4 IntVal = int4(round(saturate(Input) * 255.0f));
+    uint4 UIntVal = (IntVal & 0xff);
+    uint pack = (UIntVal.x) | (UIntVal.y << 8) | (UIntVal.z << 16) | (UIntVal.w << 24);
+    return pack;
+}
+// float4 Color を  unorm byte4 にパック
+uint PackUnorm8bitFromColor(float4 Input)
+{
+    const int4 IntVal = int4(round(saturate(Input) * 255.0f));
+    uint4 UIntVal = (IntVal & 0xff);
+    uint pack = (UIntVal.x << 16) | (UIntVal.y << 8) | (UIntVal.z << 0) | (UIntVal.w << 24);
+    return pack;
+}
+
+
+
+
+// 草単体の情報
+struct GrassEntityInfo
+{
+    float4 base_dir; // 位置0から子への基準向きと長さ
+    float4 pos0; // 位置
+    float4 vel0; // 速度
+
+    float4 pos1; // 位置
+    float4 vel1; // 速度
+
+    float life_sec;     // 残りの寿命
+    float life_sec_init;// 寿命初期値
+    uint pad[2];// 16byte padding
+};
+// 追加時用の構造体
+struct GrassEntityAppendInfo
+{
+    float4 base_dir; // 位置0から子への基準向きと長さ
+    float4 pos0; // 位置
+
+    float life_sec_init;
+    uint pad[3]; // 16byte padding
+};
+
+
+// ComputeGrassのバッファについての各種カウント情報. uint32で構成する.
+struct GrassEntityCountInfo
+{
+	// 無効要素の個数. ソートされたバッファの末尾に無効要素がこの数だけ配置されている.
+	// エミッタ等はこのカウンタを参照して書き込み位置を決定し、必要なら加算する.
+	// Atomicな加算はいろいろ準備が必要なので、現状は使わずにどれかのスレッドが代表して追加した要素数を加算する予定.
+	// どこかのスレッドが追加をスキップしていたとしても最大値を加算する. 多い分には若干無駄ができるだけで破綻はせず、次のフレームのソートでまた適切にカウントが計算される.
+    uint disable_count_;
+};
+
+// ComputeGrassのグリッドセル情報構造体
+struct GridCellInfo
+{
+    float4 representative_pos;
+    float4 representative_vel;
+};
+
+
+
+float GetDeadAnimSec()
+{
+    return 16.0;
+}
+float GetSpawnAnimSec()
+{
+    return 5.0;
+}
+float GetGravityIntensity()
+{
+    return 0.2;
+}
+
+// 新規インスタンスを直接追加する
+// ソート済みハッシュインデックスバッファと無効要素数バッファを利用して新規インスタンスを直接追加する
+// カウントバッファの更新の同期のため,スレッドグループは一つとする. よって1ディスパッチで追加可能な最大個数は THREAD_COUNT まで.
+#if CS_COMPUTE_GRASS_APPEND_DIRECT | 0
+
+// エンティティのソート済みハッシュインデックスバッファ. 
+// このバッファの y はインスタンスバッファのインデックスを指すものであるため重複は当然許されず範囲外などもないように構築される.
+StructuredBuffer<uint2> hash_srv;
+
+// カウント情報バッファUAV.
+// 無効要素部に対して新規要素追加をするので無効要素数を更新するためにUAVとする.
+// と思ったけど別スレッドグループを同期できないので書き換えするのはまずそう. カウンタの更新は別シェーダかな...
+// 1グループだけ実行するようにして1024スレッドで1024個まで追加できるってことにすればグループ同期でいけるか
+RWStructuredBuffer<GrassEntityCountInfo> entity_count_info_uav;
+
+// エンティティのバッファ. 読み書きするのでUAV.
+RWStructuredBuffer<GrassEntityInfo> instance_uav;
+
+// 定数バッファ
+// 追加する個数
+uint cb_append_instance_count;
+// 追加する要素情報のSRV
+StructuredBuffer<GrassEntityAppendInfo> append_instance_srv;
+
+
+// カウンタ更新の作業用共有メモリ
+groupshared uint group_memory_disable_elem_start_index;
+groupshared uint group_memory_append_count[THREAD_COUNT];
+
+// instance_uav と hash_uav へ書き込み
+[numthreads(THREAD_COUNT, 1, 1)]
+void AppendDirectInstanceCS(uint3 dispatch_id : SV_DispatchThreadID, uint index_in_group : SV_GroupIndex, uint3 group_id : SV_GroupID)
+{
+    // カウントバッファの更新をスレッドグループ同期を利用して処理するために1グループだけ.
+    // 念のためシェーダ側でもグループ0だけ実行するようにする. ディスパッチ側が1グループだけ発行してくれればいいが万が一があるので.
+    bool enable_group = (0 == group_id.x);
+ 
+    if (!enable_group)
+    {
+        // グループ0以外はリターン. グループ同期のためにリターンがコンパイルエラーになったら読み書きの場所をそれぞれくくる
+        return;
+    }
+    
+    // バッファの最大サイズが必要なので取得.
+    uint src_num;
+    uint src_stride;
+    hash_srv.GetDimensions(src_num, src_stride);
+    
+    // スレッド0が代表して読み取り
+    if (0 == index_in_group)
+    {
+        // 無効要素の開始インデックス. 一応アンダーフローチェック.
+        group_memory_disable_elem_start_index = (src_num >= entity_count_info_uav[0].disable_count_) ? src_num - entity_count_info_uav[0].disable_count_ : src_num;
+    }
+    // こちらはゼロクリア
+    group_memory_append_count[index_in_group] = 0;
+
+    // グループ同期
+    GroupMemoryBarrierWithGroupSync();
+    
+    // TODO それぞれのスレッドが追加処理して共有メモリ更新
+    // 追加成功したスレッドは group_memory_append_count の担当要素に 1 を書き込みする.
+    // このスレッドが担当する要素インデックス( ハッシュインデックスバッファ )
+    uint target_hash_index = group_memory_disable_elem_start_index + index_in_group;
+    // 定数バッファで指定された追加要素数以上のスレッドはスキップ
+    if (cb_append_instance_count > index_in_group && src_num > target_hash_index)
+    {
+        // ハッシュインデックスバッファからインスタンスバッファの空き要素インデックスを取得
+        uint target_instance_index = hash_srv[target_hash_index].y;
+        
+        instance_uav[target_instance_index].life_sec_init = append_instance_srv[index_in_group].life_sec_init;
+        instance_uav[target_instance_index].life_sec = instance_uav[target_instance_index].life_sec_init;
+        instance_uav[target_instance_index].pos0 = append_instance_srv[index_in_group].pos0;
+        instance_uav[target_instance_index].vel0.xyz = float3(0, 0, 0);
+        instance_uav[target_instance_index].base_dir = append_instance_srv[index_in_group].base_dir;
+        instance_uav[target_instance_index].pos1.xyz = instance_uav[target_instance_index].pos0 + instance_uav[target_instance_index].base_dir.xyz * instance_uav[target_instance_index].base_dir.w;
+        instance_uav[target_instance_index].vel1.xyz = float3(0, 0, 0);
+
+        // 追加が完了したので1をセット
+        group_memory_append_count[index_in_group] = 1;
+    }
+    
+    // グループ同期
+    GroupMemoryBarrierWithGroupSync();
+    
+    // スレッド0が代表して共有メモリに更新後無効要素数を書き込み
+    if (0 == index_in_group)
+    {
+        // 共有メモリの加算数バッファの総和を計算
+        int append_count = 0;
+        for (int i = 0; i < THREAD_COUNT; ++i)
+        {
+            append_count += group_memory_append_count[i];
+        }
+
+        // カウントバッファを更新
+        entity_count_info_uav[0].disable_count_ = append_count;
+    }
+    
+}
+#endif
+
+
+
+// ソート済みハッシュインデックスバッファのMSB開始インデックスバッファから必要なカウント情報を取得してComputeGrass用のバッファに書き込み
+#if CS_COMPUTE_GRASS_GEN_COUNT
+
+// ソート済みハッシュインデックスバッファのHashの各MSB開始インデックスバッファ. 32要素.
+// ソート済みハッシュインデックスのハッシュについて各ビットが初めて1になるインデックスを書き込む. 存在しない場合は 0xffffffff.
+StructuredBuffer<uint> hash_msb_start_index_32_srv;
+
+// エンティティのソート済みハッシュインデックスバッファ. 
+// バッファの総数を取得するためだけに利用.定数バッファで渡しても良い.
+StructuredBuffer<uint2> hash_srv;
+
+
+// カウント情報バッファUAV
+RWStructuredBuffer<GrassEntityCountInfo> entity_count_info_uav;
+
+// 1スレッドだけ実行
+[numthreads(1, 1, 1)]
+void GenerateEntityCountInfoCS(uint3 dispatch_id : SV_DispatchThreadID)
+{
+    const uint invalid_value = ~uint(0x00);
+
+    // 念のため0番スレッドチェック
+    if (0 < dispatch_id.x)
+        return;
+    
+    // バッファの最大サイズが必要なので取得.
+    uint src_num;
+    uint src_stride;
+    hash_srv.GetDimensions(src_num, src_stride);
+
+    uint num_disable_elem = 0;
+    // 最上位ビットがMSBとなる開始インデックスがそのまま死亡して無効となった要素の開始インデックス.
+    if (invalid_value != hash_msb_start_index_32_srv[31] && src_num > hash_msb_start_index_32_srv[31])
+    {
+        // 無効要素の開始インデックスから無効要素の個数を計算.
+        num_disable_elem = src_num - hash_msb_start_index_32_srv[31];
+    }
+
+    // 書き込み
+    entity_count_info_uav[0].disable_count_ = num_disable_elem;
+}
+#endif
+
+
+
+// エンティティ更新とハッシュ生成.
+#if CS_COMPUTE_GRASS_UPDATE || 0
+
+// エンティティのバッファ. 読み書きするのでUAV.
+RWStructuredBuffer<GrassEntityInfo> instance_uav;
+
+// ハッシュインデックスバッファ
+// エンティティのステート情報バッファ. エンティティを死亡させた場合に最上位ビットを立てるためUAV.
+// 構造体にするとパディングで16byteにしないとダメなのでuint2にする. 
+RWStructuredBuffer<uint2> hash_uav;
+
+// 定数バッファ
+// デルタタイム
+float cb_delta_sec;
+
+
+// 定数バッファ
+// シミュレーション空間のAABB. 近傍探索構造の構築がこの範囲で処理される 
+float3  cb_sim_space_aabb_min;
+float3  cb_sim_space_aabb_max;
+// 各軸の空間分割数
+int3   cb_sim_space_cell_count;
+// 空間分割セルのサイズの逆数
+float  cb_sim_space_cell_size_inv;
+
+
+// 定数バッファ
+// デバッグ用障害物球の位置と半径
+float4 cb_debug_obstacle_sphere_info;
+
+// 定数バッファ
+// デバッグ用破壊球の位置と半径
+float4 cb_debug_destruct_sphere_info;
+
+// instance_uav と hash_uav へ書き込み
+[numthreads(THREAD_COUNT, 1, 1)]
+void UpdateInstanceCS(uint3 dispatch_id : SV_DispatchThreadID)
+{
+    const float epsilon = 0.001;
+    
+    const float3 gravity_dir = normalize(float3(0, 0, -1));
+    const float gravity_intensity = GetGravityIntensity();
+    float3 gravity_force = gravity_dir * gravity_intensity;
+
+    const float aboid_intensity = 0.1;
+    // 死亡時初速
+    const float dead_anim_vel_intensity = 2;//0.3;
+    const float dead_anim_sec = GetDeadAnimSec();
+
+    const uint elem_id = dispatch_id.x;
+    
+    uint src_num;
+    uint src_stride;
+    instance_uav.GetDimensions(src_num, src_stride);
+    // 範囲チェック
+    if (src_num <= elem_id)
+        return;
+    
+    float3 pos0 = instance_uav[elem_id].pos0.xyz;
+    float3 vel0 = instance_uav[elem_id].vel0.xyz;
+    float4 rootDir_len = instance_uav[elem_id].base_dir;
+    float3 jointPos0 = instance_uav[elem_id].pos1.xyz;
+    float3 jointVel0 = instance_uav[elem_id].vel1.xyz;
+    float lifesec = instance_uav[elem_id].life_sec;
+    float lifesec_init = instance_uav[elem_id].life_sec_init;
+
+    // 適当な成長っぽい感じ
+    float growup_rate = (0 <= lifesec_init) ? saturate((lifesec_init-lifesec) / 0.5)+1e-4 : 1.0;
+    
+
+
+    // 寿命が非負なら減らす
+    float next_lifesec = (0 < lifesec) ? max(0, lifesec - cb_delta_sec) : lifesec;
+
+    // 破壊球の内部の場合は死亡アニメーションに遷移させる
+    if (0.0 < cb_debug_destruct_sphere_info.w && dead_anim_sec < next_lifesec)
+    {
+        float3 dist = (cb_debug_destruct_sphere_info.xyz - pos0);
+        if (cb_debug_destruct_sphere_info.w*cb_debug_destruct_sphere_info.w >= dot(dist, dist))
+        {
+            next_lifesec = dead_anim_sec;
+        }
+    }
+
+    // 寿命が正でも負でもなくゼロの場合は死んでいる要素
+    uint is_dead = (0 == next_lifesec) ? 1 : 0;
+
+    uint is_dead_anim = dead_anim_sec >= next_lifesec;
+
+    // 死亡アニメ中は重力減らして飛ばす
+    gravity_force *= (is_dead_anim)? 0.005 : 1.0;
+    
+    //--------------------------------------------------------------------------------------------------------------------------
+    float3 pos0_predict = pos0 + vel0 * 0.999;
+    if (is_dead_anim)
+    {
+        // 残り寿命が一定以下になった瞬間に上方向に飛ばしてみる
+        if (dead_anim_sec < lifesec)
+        {
+            // 乱数で吹き飛ばしばらつき
+            pos0_predict += rootDir_len.xyz * dead_anim_vel_intensity * ((frac(sin(dot(float3(elem_id, elem_id, elem_id), float3(12.9898, 78.233, 328.213))) * 43758.5453)) + 0.5);
+        }
+        // 死亡アニメに入ったら重力加算
+        pos0_predict += gravity_force;
+    }
+
+
+    // 先端を障害物との接触で揺らす処理
+    float3 jointPredictPos0 = jointPos0;
+    // 速度で位置更新
+    jointPredictPos0 += jointVel0 * 0.999; // 適当に減衰
+
+    // 重力
+    jointPredictPos0 += gravity_force;
+    
+    // コリジョンの影響
+    // ルート側
+    if (is_dead_anim)
+    {
+        // 死亡して飛ばされている場合はルートもコリジョンを取る 
+        float3 dist_from_obstacle = pos0_predict - cb_debug_obstacle_sphere_info.xyz;
+        float len_from_obstacle = length(dist_from_obstacle);
+        float3 dir_from_obstacle = normalize(dist_from_obstacle);
+        float avoid_rate = (1 - saturate(len_from_obstacle / cb_debug_obstacle_sphere_info.w)) * aboid_intensity;
+        float3 collisionDelta0 = (avoid_rate * avoid_rate * dir_from_obstacle * cb_debug_obstacle_sphere_info.w);
+        // 推定位置
+        pos0_predict += collisionDelta0;
+    }
+    // 先端側
+    {
+        float3 dist_from_obstacle = jointPredictPos0 - cb_debug_obstacle_sphere_info.xyz;
+        float len_from_obstacle = length(dist_from_obstacle);
+        float3 dir_from_obstacle = normalize(dist_from_obstacle);
+        float avoid_rate = (1 - saturate(len_from_obstacle / cb_debug_obstacle_sphere_info.w)) * aboid_intensity;
+        float3 collisionDelta0 = (avoid_rate * avoid_rate * dir_from_obstacle * cb_debug_obstacle_sphere_info.w);
+        // 推定位置
+        jointPredictPos0 += collisionDelta0;
+        
+        // 復元力の強さ
+        if (!is_dead_anim)
+        {
+            const float springIntensity = 1.0;
+            float3 jointDiffIdeal0 = rootDir_len.xyz * rootDir_len.w + pos0_predict - jointPredictPos0;
+            float jointDiffLenIdeal0 = saturate(length(jointDiffIdeal0) / rootDir_len.w);
+            jointPredictPos0 += rootDir_len.xyz * jointDiffLenIdeal0 * springIntensity;
+        }
+    }
+
+    // 距離拘束を強制
+    jointPredictPos0 = pos0_predict + normalize(jointPredictPos0 - pos0_predict) * rootDir_len.w;
+    //--------------------------------------------------------------------------------------------------------------------------
+        
+    // 書き換え
+    instance_uav[elem_id].pos0.xyz = pos0_predict;
+    instance_uav[elem_id].vel0.xyz = (pos0_predict - pos0);
+    instance_uav[elem_id].pos1.xyz = jointPredictPos0;
+    instance_uav[elem_id].vel1.xyz = (jointPredictPos0 - jointPos0) * growup_rate;// 初期は急な速度にならないように
+    instance_uav[elem_id].life_sec = next_lifesec;
+    
+    
+    //--------------------------------------------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------------------------------------------------------------
+    // ハッシュインデックスバッファ生成
+    // 死んでいる場合は最上位ビットを 1 にする
+    uint next_hash = (is_dead << 31);
+
+    uint3 grid_pos = clamp(uint3((pos0_predict - cb_sim_space_aabb_min) * cb_sim_space_cell_size_inv), 0, cb_sim_space_cell_count);
+    // MortonCodeをハッシュに埋め込み
+    next_hash = next_hash | EncodeMortonX10Y10Z10(grid_pos);
+    
+    // 本番はこっちで死亡フラグ他情報を書き込む
+    // エミッタ処理のために最上位ビットは必ず死亡フラグとする. 死んで無効となった要素は最上位bitを1とする.
+    hash_uav[elem_id].x = next_hash;
+
+    // yには要素インデックス.
+    hash_uav[elem_id].y = elem_id;
+    //--------------------------------------------------------------------------------------------------------------------------
+}
+#endif
+
+// グリッドセル情報を利用したエンティティ更新.
+#if CS_COMPUTE_GRASS_UPDATE_WITH_GRIDCELL || 0
+
+// ハッシュインデックスバッファ
+StructuredBuffer<uint2> hash_srv;
+
+// インスタンスのハッシュ値が昇順で何番目のハッシュかを表すscanバッファ
+StructuredBuffer<uint> hash_kind_scan_srv;
+
+// グリッドセル情報SRV
+StructuredBuffer<GridCellInfo> gridcell_data_srv;
+
+// エンティティのバッファ. 読み書きするのでUAV.
+RWStructuredBuffer<GrassEntityInfo> instance_uav;
+
+// 定数バッファ
+// デルタタイム
+float cb_delta_sec;
+
+
+// 定数バッファ
+// シミュレーション空間のAABB. 近傍探索構造の構築がこの範囲で処理される 
+float3 cb_sim_space_aabb_min;
+float3 cb_sim_space_aabb_max;
+// 各軸の空間分割数
+int3 cb_sim_space_cell_count;
+// 空間分割セルのサイズの逆数
+float cb_sim_space_cell_size_inv;
+
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void UpdateInstanceWithGridCellCS(uint3 dispatch_id : SV_DispatchThreadID)
+{
+    const float epsilon = 0.001;
+    const uint invalid_value = ~uint(0x00);
+    
+    
+    uint src_num;
+    uint src_stride;
+    hash_srv.GetDimensions(src_num, src_stride);
+    // 範囲チェック
+    if (src_num <= dispatch_id.x)
+        return;
+
+    uint2 hash_data = hash_srv[dispatch_id.x];
+    // ハッシュの最上位ビットが1の場合は無効ハッシュなので終了
+    if (hash_data.x & (0x01<<31))
+        return;
+
+    uint hash_kind = hash_kind_scan_srv[dispatch_id.x];
+
+    GridCellInfo grid_data = gridcell_data_srv[hash_kind];
+
+    
+    float3 vel = instance_uav[hash_data.y].vel1.xyz;
+
+    // 拡散
+    vel = lerp(vel, grid_data.representative_vel.xyz, saturate(cb_delta_sec *  1.0 / 0.25));
+
+    /*
+    // 重心についての引力斥力
+    float3 dir_to_grid_center_of_mass = grid_data.representative_pos.xyz - instance_uav[hash_data.y].pos1.xyz;
+    float len_to_grid_center_of_mass = length(dir_to_grid_center_of_mass);
+    dir_to_grid_center_of_mass = (0.001 < len_to_grid_center_of_mass) ? dir_to_grid_center_of_mass / len_to_grid_center_of_mass : float3(0,0,0);
+    float diff_constraint_len = len_to_grid_center_of_mass - (1.0 / cb_sim_space_cell_size_inv) * 0.5;// セルサイズに対する適当な割合の距離を維持するようにしてみる
+    vel += dir_to_grid_center_of_mass * diff_constraint_len * saturate(cb_delta_sec * 1.0/1.0);
+    */
+
+    instance_uav[hash_data.y].vel1.xyz = vel;
+
+}
+#endif
+
+
+// グリッドセルに情報を収集
+#if CS_COMPUTE_GRASS_GATHER_TO_GRIDCELL | 0
+
+// エンティティのソート済みハッシュインデックスバッファ. 
+StructuredBuffer<uint2> hash_srv;
+
+// エンティティバッファ
+StructuredBuffer<GrassEntityInfo> instance_srv;
+
+// 有効ハッシュバッファ
+// インデックス0に有効ハッシュ数が格納されている.実際の有効ハッシュ情報はインデックス1以降である.
+StructuredBuffer<uint2> enable_hash_info_srv;
+
+// グリッドセル情報バッファUAV
+RWStructuredBuffer<GridCellInfo> gridcell_data_uav;
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void GatherToGridCellCS(uint3 dispatch_id : SV_DispatchThreadID, uint3 id_in_group : SV_GroupThreadID, uint index_in_group : SV_GroupIndex)
+{
+    const uint invalid_value = ~uint(0x00);
+    
+    uint src_num;
+    uint src_stride;
+    instance_srv.GetDimensions(src_num, src_stride);
+    
+    const uint num_enable_hash = enable_hash_info_srv[0].x;
+    // 1スレッドが1セル担当する場合は有効ハッシュ数(有効セル数)分以上のスレッドは何もしない
+    if (num_enable_hash <= dispatch_id.x)
+        return;
+    
+    // 担当ハッシュ
+    uint2 enable_hash = enable_hash_info_srv[dispatch_id.x + 1];
+    // ハッシュの最上位ビットが1の場合は無効ハッシュなので終了
+    if (0 != (enable_hash.x & (0x01 << 31)))
+        return;
+
+    // 担当ハッシュの次の要素. インスタンス数の計算のため.
+    uint2 enable_next_hash = (num_enable_hash > dispatch_id.x + 1) ? enable_hash_info_srv[dispatch_id.x + 2] : uint2(invalid_value, src_num);
+    
+    int num_entity_in_cell = enable_next_hash.y - enable_hash.y;
+    
+    // セル内エンティティの平均速度などを計算. 共有メモリで高速化できそう.
+    float inv_num_entity = 1.0 / float(num_entity_in_cell);
+    float3 rep_pos = float3(0, 0, 0);
+    float3 rep_vel = float3(0, 0, 0);
+    for (int i = enable_hash.y; i < enable_next_hash.y; ++i)
+    {
+        rep_pos += instance_srv[hash_srv[i].y].pos0.xyz;
+        rep_vel += ( instance_srv[hash_srv[i].y].vel0.xyz + instance_srv[hash_srv[i].y].vel1.xyz) * 0.5;
+    }
+    gridcell_data_uav[dispatch_id.x].representative_pos = float4(inv_num_entity * rep_pos, 0);
+    gridcell_data_uav[dispatch_id.x].representative_vel = float4(inv_num_entity * rep_vel, 0);
+
+}
+#endif
+
+
+
+// エンティティ毎のメッシュ頂点バッファインデックスバッファ生成
+#if CS_COMPUTE_GRASS_GEN_MESH || 0
+
+// エンティティバッファ
+StructuredBuffer<GrassEntityInfo> instance_srv;
+
+// エンティティのハッシュインデックス情報バッファ. 
+StructuredBuffer<uint2> hash_srv;
+
+// Position 頂点バッファ. 十分なサイズ確保されているものとする.
+RWStructuredBuffer<float3> vtx_pos_buffer;
+// カラーバッファ
+RWStructuredBuffer<uint> vtx_color_buffer;// 頂点カラーバッファは uint32 の 8bit color
+// UVバッファ halfだとうまく書き込めないので単精度floatに固定
+RWStructuredBuffer<float2> vtx_uv_buffer;
+// 接線法線バッファ halfだとうまく書き込めないのでuintにxyzwをパックしたフォーマットに固定
+RWStructuredBuffer<uint> vtx_tangent_space_buffer;
+// インデックスバッファ
+RWStructuredBuffer<uint> index_buffer;
+
+// 定数バッファ
+// 現状は
+// x : エンティティ一つの頂点数
+// y ; エンティティ一つのトライアングル数
+uint4   cb_entity_mesh_info;
+
+
+[numthreads(THREAD_COUNT, 1, 1)]
+void GenerateMeshCS(uint3 dispatch_id : SV_DispatchThreadID)
+{
+    const float epsilon = 0.001;
+    
+    const float3 gravity_dir = normalize(float3(0, 0, -1));
+    const float gravity_intensity = GetGravityIntensity();
+    const float3 gravity_force = gravity_dir * gravity_intensity;
+
+    const float dead_anim_sec = GetDeadAnimSec();
+    const float spawn_anim_sec = GetSpawnAnimSec();
+
+    const float grass_half_width = 3;
+    //const float grass_half_width = 20;
+
+
+    // 検証中. 現在は1スレッドがsrc_position_bufferの1要素からトライアングル一つをUAV頂点バッファに書き込む
+    uint src_num;
+    uint src_stride;
+    instance_srv.GetDimensions(src_num, src_stride);
+    // 範囲チェック
+    if (src_num <= dispatch_id.x)
+        return;
+    
+    // ステートバッファに書き込みができているかチェックするため
+    uint2 elem_state = hash_srv[dispatch_id.x];
+    
+    // 要素インデックスの指定
+    // ハッシュインデックスバッファのインデックス部を利用
+    uint element_index = elem_state.y;
+  
+    float lifesec = instance_srv[element_index].life_sec;
+    float lifesec_init = instance_srv[element_index].life_sec_init;
+    float3 rootPos = instance_srv[element_index].pos0.xyz;
+    float4 rootDir_len = instance_srv[element_index].base_dir;
+    float3 jointPos0 = instance_srv[element_index].pos1.xyz;
+    float3 jointVel0 = instance_srv[element_index].vel1.xyz;
+    float3 dist0 = jointPos0 - rootPos;
+    float3 dir0 = normalize(dist0);
+    float3 nomr0 = normalize(cross(dir0, float3(-dir0.z, dir0.x, -dir0.y)));
+
+    // なんとなく生えてきた感を出すために時間でスケール
+    float growup_rate = (0 <= lifesec_init) ? saturate((lifesec_init - lifesec) / spawn_anim_sec) + 1e-4 : 1.0;
+    float dead_rate = (0 <= lifesec_init) ? saturate(1 - lifesec/dead_anim_sec) : 0.0;
+    float dead_anim_scale = 1 - dead_rate * dead_rate;
+    
+    // ステート値. [0,0.5) で発生アニメ, (0.5,1] で死亡アニメとする
+    float state_embed_color = (0.0 < growup_rate) ? growup_rate*0.5 : 0;
+    state_embed_color = (0.0 < dead_rate) ? 0.5 + dead_rate * 0.5 : state_embed_color;
+
+
+    // ハッシュからMortonCode取得して頂点カラーのRGBに埋め込んで見る
+    //uint morton = elem_state.x & ~(0x01 << 31);
+    uint3 grid_pos = DencodeMortonX10Y10Z10(elem_state.x);
+    float3 grid_color = saturate(float3(grid_pos.x, grid_pos.y, grid_pos.z) % 2);
+    
+    const float ex_scale = min(growup_rate, dead_anim_scale);
+
+    const uint num_vtx = cb_entity_mesh_info.x;
+    const uint num_tri = cb_entity_mesh_info.y;
+    // パラメータでエンティティ一つにいくつ頂点とトライアングルを割り当てるか指定される
+    //uint vtx_start = element_index * num_vtx;
+    //uint index_start = element_index * (num_tri * 3);
+    // 書き換える頂点バッファはDispatchThreadIDを使って先頭からにする.
+    uint vtx_start = dispatch_id.x * num_vtx;
+    uint index_start = dispatch_id.x * (num_tri * 3);
+
+    // 生存時間がゼロの場合はメッシュをゼロ面積にしてリターン(生存時間が負の場合は寿命無し)
+    if (0 == lifesec)
+    {
+        index_buffer[index_start + 0] = 0;
+        index_buffer[index_start + 1] = 0;
+        index_buffer[index_start + 2] = 0;
+    
+        index_buffer[index_start + 3] = 0;
+        index_buffer[index_start + 4] = 0;
+        index_buffer[index_start + 5] = 0;
+
+        index_buffer[index_start + 6] = 0;
+        index_buffer[index_start + 7] = 0;
+        index_buffer[index_start + 8] = 0;
+    
+        index_buffer[index_start + 9] = 0;
+        index_buffer[index_start + 10] = 0;
+        index_buffer[index_start + 11] = 0;
+        
+        return;
+    }
+    // インデックスバッファ書き込み
+    index_buffer[index_start + 0] = vtx_start + 0;
+    index_buffer[index_start + 1] = vtx_start + 1;
+    index_buffer[index_start + 2] = vtx_start + 2;
+    
+    index_buffer[index_start + 3] = vtx_start + 1;
+    index_buffer[index_start + 4] = vtx_start + 3;
+    index_buffer[index_start + 5] = vtx_start + 2;
+
+    index_buffer[index_start + 6] = vtx_start + 2;
+    index_buffer[index_start + 7] = vtx_start + 3;
+    index_buffer[index_start + 8] = vtx_start + 4;
+    
+    index_buffer[index_start + 9] = vtx_start + 3;
+    index_buffer[index_start + 10] = vtx_start + 5;
+    index_buffer[index_start + 11] = vtx_start + 4;
+
+
+    // 頂点バッファ書き込み
+    // 基準点とサイドベクトル
+    float3 base_p0 = rootPos;
+    float3 base_p1 = (jointPos0 - rootPos) * ex_scale + rootPos;
+    float3 base_p2 = base_p1 + normalize(dir0 - (jointVel0 * 0.25 - gravity_force)) * rootDir_len.w * 0.75 * ex_scale;
+    float3 base_d0 = dir0;
+    float3 base_d1 = normalize(base_p1 - base_p0);
+    float3 base_d2 = normalize(base_p2 - base_p1);
+    float3 base_n0 = nomr0;
+    float3 base_n1 = normalize(cross(base_d1, float3(-base_d1.z, base_d1.x, -base_d1.y)));
+    float3 base_n2 = normalize(cross(base_d2, float3(-base_d2.z, base_d2.x, -base_d2.y)));
+    float3 base_s0 = cross(base_n0, base_d0);
+    float3 base_s1 = cross(base_n1, base_d1);
+    float3 base_s2 = cross(base_n2, base_d2);
+
+    float3 p0_0 = base_p0 - base_s0 * grass_half_width * 0.4 * dead_anim_scale;
+    float3 p0_1 = base_p0 + base_s0 * grass_half_width * 0.4 * dead_anim_scale;
+    float3 p1_0 = base_p1 - base_s1 * grass_half_width * 1 * dead_anim_scale;
+    float3 p1_1 = base_p1 + base_s1 * grass_half_width * 1 * dead_anim_scale;
+    float3 p2_0 = base_p2 - base_s2 * grass_half_width * 0.1 * dead_anim_scale;
+    float3 p2_1 = base_p2 + base_s2 * grass_half_width * 0.1 * dead_anim_scale;
+    
+    vtx_pos_buffer[vtx_start + 0] = p0_0;
+    vtx_pos_buffer[vtx_start + 1] = p0_1;
+    vtx_pos_buffer[vtx_start + 2] = p1_0;
+    vtx_pos_buffer[vtx_start + 3] = p1_1;
+    vtx_pos_buffer[vtx_start + 4] = p2_0;
+    vtx_pos_buffer[vtx_start + 5] = p2_1;
+
+    
+    uint n0 = PackSnorm8bitFromFloat4(base_n0);
+    uint t0 = PackSnorm8bitFromFloat4(base_s0);
+    uint n1 = PackSnorm8bitFromFloat4(base_n1);
+    uint t1 = PackSnorm8bitFromFloat4(base_s1);
+    uint n2 = PackSnorm8bitFromFloat4(base_n2);
+    uint t2 = PackSnorm8bitFromFloat4(base_s2);
+    vtx_tangent_space_buffer[(vtx_start + 0) * 2 + 0] = t0;
+    vtx_tangent_space_buffer[(vtx_start + 0) * 2 + 1] = n0;
+    vtx_tangent_space_buffer[(vtx_start + 1) * 2 + 0] = t0;
+    vtx_tangent_space_buffer[(vtx_start + 1) * 2 + 1] = n0;
+    
+    vtx_tangent_space_buffer[(vtx_start + 2) * 2 + 0] = t1;
+    vtx_tangent_space_buffer[(vtx_start + 2) * 2 + 1] = n1;
+    vtx_tangent_space_buffer[(vtx_start + 3) * 2 + 0] = t1;
+    vtx_tangent_space_buffer[(vtx_start + 3) * 2 + 1] = n1;
+    
+    vtx_tangent_space_buffer[(vtx_start + 4) * 2 + 0] = t2;
+    vtx_tangent_space_buffer[(vtx_start + 4) * 2 + 1] = n2;
+    vtx_tangent_space_buffer[(vtx_start + 5) * 2 + 0] = t2;
+    vtx_tangent_space_buffer[(vtx_start + 5) * 2 + 1] = n2;
+    
+#if 1
+    vtx_color_buffer[vtx_start + 0] = PackUnorm8bitFromColor(float4(grid_color, state_embed_color));
+    vtx_color_buffer[vtx_start + 1] = PackUnorm8bitFromColor(float4(grid_color, state_embed_color));
+    vtx_color_buffer[vtx_start + 2] = PackUnorm8bitFromColor(float4(grid_color, state_embed_color));
+    vtx_color_buffer[vtx_start + 3] = PackUnorm8bitFromColor(float4(grid_color, state_embed_color));
+    vtx_color_buffer[vtx_start + 4] = PackUnorm8bitFromColor(float4(grid_color, state_embed_color));
+    vtx_color_buffer[vtx_start + 5] = PackUnorm8bitFromColor(float4(grid_color, state_embed_color));
+#else
+    // デバッグカラー
+    vtx_color_buffer[vtx_start + 0] = PackUnorm8bitFromColor(float4(debug_color, 1));
+    vtx_color_buffer[vtx_start + 1] = PackUnorm8bitFromColor(float4(debug_color, 1));
+    vtx_color_buffer[vtx_start + 2] = PackUnorm8bitFromColor(float4(debug_color, 1));
+    vtx_color_buffer[vtx_start + 3] = PackUnorm8bitFromColor(float4(debug_color, 1));
+    vtx_color_buffer[vtx_start + 4] = PackUnorm8bitFromColor(float4(debug_color, 1));
+    vtx_color_buffer[vtx_start + 5] = PackUnorm8bitFromColor(float4(debug_color, 1));
+#endif
+    vtx_uv_buffer[vtx_start + 0] = float2(0.855, 0.1);
+    vtx_uv_buffer[vtx_start + 1] = float2(0.865, 0.1);
+    vtx_uv_buffer[vtx_start + 2] = float2(0.845, 0.5);
+    vtx_uv_buffer[vtx_start + 3] = float2(0.875, 0.5);
+    vtx_uv_buffer[vtx_start + 4] = float2(0.856, 0.9);
+    vtx_uv_buffer[vtx_start + 5] = float2(0.864, 0.9);
+}
+#endif
+
+

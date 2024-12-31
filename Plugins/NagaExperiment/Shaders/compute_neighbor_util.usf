@@ -1,0 +1,98 @@
+﻿#pragma once
+
+#include "/Engine/Public/Platform.ush"
+
+#include "/Engine/Private/Common.ush"
+
+/*
+    近傍探索用の機能群 インクルードして利用される
+*/
+
+
+// ビット数え上げ
+int BitCount(uint v)
+{
+    uint count = (v & 0x55555555) + ((v >> 1) & 0x55555555);
+    count = (count & 0x33333333) + ((count >> 2) & 0x33333333);
+    count = (count & 0x0f0f0f0f) + ((count >> 4) & 0x0f0f0f0f);
+    count = (count & 0x00ff00ff) + ((count >> 8) & 0x00ff00ff);
+    return (count & 0x0000ffff) + ((count >> 16) & 0x0000ffff);
+}
+// 最大ビット位置, 0ベース, 不正で-1
+int MostSignificantBit(uint v)
+{
+    uint valid = (v != 0);
+    if (!valid)
+        return -1;
+
+    v |= (v >> 1);
+    v |= (v >> 2);
+    v |= (v >> 4);
+    v |= (v >> 8);
+    v |= (v >> 16);
+    return BitCount(v) - 1;
+}
+// LSBを返す
+// 最下位ビットの位置  00110 なら 1
+//						0101 なら 0
+// 引数が 0 の場合は -1
+int LeastSignificantBit(uint v)
+{
+	// ビット反転して1足したものと論理積をとると最下位ビットだけが残る
+	// そこから 1引くと最下位ビットより下のビットがすべて1になるのでそのビットカウントがLSBの位置
+    return 0 == v ? -1 : BitCount((v & (~v + 1)) - 1);
+}
+
+#if 0
+// 最小ビット位置, 0ベース, 不正で-1
+int LeastSignificantBit(uint v)
+{
+    uint valid = (v != 0);
+    if (!valid)
+        return -1;
+
+    v |= (v << 1);
+    v |= (v << 2);
+    v |= (v << 4);
+    v |= (v << 8);
+    v |= (v << 16);
+    return 32 - BitCount(v);
+}
+#endif
+
+
+// 引数のビット列の各位置の後ろに 00 を挿入したビット列を返す
+// 101011  ->  1 00  0 00  1 00  0 00  1 00  1 00
+// 10bit分が有効
+uint Encode2BitSkip(uint x)
+{
+    x &= 0x000003ff; // x = ---- ---- ---- ---- ---- --98 7654 3210
+    x = (x ^ (x << 16)) & 0xff0000ff; // x = ---- --98 ---- ---- ---- ---- 7654 3210
+    x = (x ^ (x << 8)) & 0x0300f00f; // x = ---- --98 ---- ---- 7654 ---- ---- 3210
+    x = (x ^ (x << 4)) & 0x030c30c3; // x = ---- --98 ---- 76-- --54 ---- 32-- --10
+    x = (x ^ (x << 2)) & 0x09249249; // x = ---- 9--8 --7- -6-- 5--4 --3- -2-- 1--0
+    return x;
+}
+// Encode2BitSkip　されたビット列を元のビット列に戻す
+uint Decode2BitSkip(uint x)
+{
+    x &= 0x09249249; // x = ---- 9--8 --7- -6-- 5--4 --3- -2-- 1--0
+    x = (x ^ (x >> 2)) & 0x030c30c3; // x = ---- --98 ---- 76-- --54 ---- 32-- --10
+    x = (x ^ (x >> 4)) & 0x0300f00f; // x = ---- --98 ---- ---- 7654 ---- ---- 3210
+    x = (x ^ (x >> 8)) & 0xff0000ff; // x = ---- --98 ---- ---- ---- ---- 7654 3210
+    x = (x ^ (x >> 16)) & 0x000003ff; // x = ---- ---- ---- ---- ---- --98 7654 3210
+    return x;
+}
+
+// 座標をモートンコードに変換
+// 各軸10bitを採用
+// 直接使わずに EncodeX10Y10Z10() DencodeX10Y10Z10() を使用してください
+uint EncodeMortonX10Y10Z10(uint3 p)
+{
+    return (Encode2BitSkip(p.z) << 2) + (Encode2BitSkip(p.y) << 1) + Encode2BitSkip(p.x);
+}
+// モートンコードから座標復元
+uint3 DencodeMortonX10Y10Z10(uint morton3)
+{
+    return uint3(Decode2BitSkip(morton3), Decode2BitSkip(morton3 >> 1), Decode2BitSkip(morton3 >> 2));
+}
