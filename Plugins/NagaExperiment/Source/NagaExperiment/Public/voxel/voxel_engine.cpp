@@ -26,18 +26,18 @@
 #include "LevelEditorViewport.h"
 #endif
 
-class ANglVoxelEngine;
+class AVoxelEngine;
 
 
-	NglVoxelEngineAsyncTask::NglVoxelEngineAsyncTask()
+	VoxelEngineAsyncTask::VoxelEngineAsyncTask()
 	{
 	}
-	NglVoxelEngineAsyncTask::~NglVoxelEngineAsyncTask()
+	VoxelEngineAsyncTask::~VoxelEngineAsyncTask()
 	{
 		Finalize();
 	}
 
-	bool NglVoxelEngineAsyncTask::Initialize(ANglVoxelEngine* owner)
+	bool VoxelEngineAsyncTask::Initialize(AVoxelEngine* owner)
 	{
 
 		// 念の為Async完了待ち
@@ -45,7 +45,7 @@ class ANglVoxelEngine;
 	
 		if (!owner)
 		{
-			UE_LOG(LogTemp, Fatal, TEXT("[NglVoxelEngineAsyncTask] Invalid Owner Ptr."));
+			UE_LOG(LogTemp, Fatal, TEXT("[VoxelEngineAsyncTask] Invalid Owner Ptr."));
 			return false;
 		}
 
@@ -54,7 +54,7 @@ class ANglVoxelEngine;
 	
 		return true;
 	}
-	void NglVoxelEngineAsyncTask::Finalize()
+	void VoxelEngineAsyncTask::Finalize()
 	{
 		// Async完了待ち
 		WaitAsyncUpdate();
@@ -64,12 +64,12 @@ class ANglVoxelEngine;
 	}
 
 	// 非同期実行関数
-	void NglVoxelEngineAsyncTask::AsyncUpdate()
+	void VoxelEngineAsyncTask::AsyncUpdate()
 	{
 		// TODO.
 		if (!owner_)
 		{
-			UE_LOG(LogTemp, Fatal, TEXT("[NglVoxelEngineAsyncTask] Invalid Owner Ptr."));
+			UE_LOG(LogTemp, Fatal, TEXT("[VoxelEngineAsyncTask] Invalid Owner Ptr."));
 			return;
 		}
 
@@ -80,7 +80,7 @@ class ANglVoxelEngine;
 
 	// ----------------------------------------------------------------------------------------------------------------
 	// ----------------------------------------------------------------------------------------------------------------
-	ANglVoxelEngine::ANglVoxelEngine()
+	AVoxelEngine::AVoxelEngine()
 	{
 		// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 		PrimaryActorTick.bCanEverTick = true;
@@ -100,7 +100,7 @@ class ANglVoxelEngine;
 		// Async初期化
 		async_task_.Initialize(this);
 	}
-	ANglVoxelEngine::~ANglVoxelEngine()
+	AVoxelEngine::~AVoxelEngine()
 	{
 		// 非同期タスク待機.
 		async_task_.WaitAsyncUpdate();
@@ -109,7 +109,7 @@ class ANglVoxelEngine;
 		FinalizeVoxel();
 	}
 	// Voxelメモリの解放とComponentの解放
-	void ANglVoxelEngine::FinalizeVoxel()
+	void AVoxelEngine::FinalizeVoxel()
 	{
 		{
 			for (auto&& it : voxel_chunk_map_)
@@ -155,12 +155,12 @@ class ANglVoxelEngine;
 		}
 	}
 
-	void ANglVoxelEngine::OnConstruction(const FTransform& Transform)
+	void AVoxelEngine::OnConstruction(const FTransform& Transform)
 	{
 		Super::OnConstruction(Transform);
 
 	}
-	void ANglVoxelEngine::BeginPlay()
+	void AVoxelEngine::BeginPlay()
 	{
 		Super::BeginPlay();
 
@@ -189,7 +189,7 @@ class ANglVoxelEngine;
 		}
 #endif
 	}
-	void ANglVoxelEngine::EndPlay(EEndPlayReason::Type reason)
+	void AVoxelEngine::EndPlay(EEndPlayReason::Type reason)
 	{
 		Super::EndPlay(reason);
 
@@ -210,14 +210,14 @@ class ANglVoxelEngine;
 
 	// EditorMode Tick Enable.
 	//	EditorモードでのTick呼び出し許可.
-	bool ANglVoxelEngine::ShouldTickIfViewportsOnly() const
+	bool AVoxelEngine::ShouldTickIfViewportsOnly() const
 	{
 		//return true; Editorモードでも動作するようになるが,ProceduralMeshの後処理かなにかでPlay開始時に停止時間が発生するため一旦無効化する.
 		return false;
 	}
 
 	// ShouldTickIfViewportsOnly()が真を返すことでEditorモードでも呼び出されます.
-	void ANglVoxelEngine::Tick(float DeltaTime)
+	void AVoxelEngine::Tick(float DeltaTime)
 	{
 		Super::Tick(DeltaTime);
 
@@ -377,7 +377,7 @@ class ANglVoxelEngine;
 
 			auto display_string =
 				FString::Printf(
-					TEXT("NglVoxelEngine\n    runtime_chunk:%f[MB]\n	chunk_count:%d\n	mesh_count:%d\n	mesh_pool:%d\n\n	proc_mesh_count:%d\n"),
+					TEXT("VoxelEngine\n    runtime_chunk:%f[MB]\n	chunk_count:%d\n	mesh_count:%d\n	mesh_pool:%d\n\n	proc_mesh_count:%d\n"),
 
 
 					(static_cast<float>(chunk_memory_byte_size)/(1024.0f*1024.0f)),
@@ -402,7 +402,7 @@ class ANglVoxelEngine;
 	}
 
 	// 非同期処理.
-	void ANglVoxelEngine::SyncUpdate()
+	void AVoxelEngine::SyncUpdate()
 	{
 		// voxel_chunk_map_への要素追加や削除は同期中に実行する.
 
@@ -441,7 +441,7 @@ class ANglVoxelEngine;
 			if (chunk_ptr)
 			{
 				auto&& chunk = *chunk_ptr;
-				assert(NglVoxelChunkState::Deletable == chunk->GetState());
+				assert(VoxelChunkState::Deletable == chunk->GetState());
 				// 要素破棄
 				if (chunk)
 				{
@@ -559,7 +559,7 @@ class ANglVoxelEngine;
 			assert(nullptr != chunk);
 			if (!chunk)
 				continue;
-			assert(NglVoxelChunkState::Active == chunk->GetState());
+			assert(naga::VoxelChunkState::Active == chunk->GetState());
 
 			diry_chunk_map.Add(e, chunk);
 			chunk->SetAnyVoxelChangeFlag(false);
@@ -649,7 +649,7 @@ class ANglVoxelEngine;
 		stream_in_chunk_complete_array_.Empty(stream_in_chunk_complete_array_.Max());
 	}
 	// 非同期処理.
-	void ANglVoxelEngine::AsyncUpdate()
+	void AVoxelEngine::AsyncUpdate()
 	{
 		const float default_chunk_gen_noise_scale = default_chunk_noise_scale_;
 
@@ -729,7 +729,7 @@ class ANglVoxelEngine;
 						continue;// 念の為
 
 					// ステートチェック.
-					assert((*chunk_ptr)->GetState() == NglVoxelChunkState::Empty);
+					assert((*chunk_ptr)->GetState() == naga::VoxelChunkState::Empty);
 
 					parallel_work_target[parallel_count] = *chunk_ptr;
 					++parallel_count;
@@ -790,7 +790,7 @@ class ANglVoxelEngine;
 
 	}
 	// チャンクをノイズから生成
-	void ANglVoxelEngine::GenerateChunkFromNoise(ChunkType& out_chunk, float default_chunk_gen_noise_scale, int noise_octave_count) const
+	void AVoxelEngine::GenerateChunkFromNoise(ChunkType& out_chunk, float default_chunk_gen_noise_scale, int noise_octave_count) const
 	{
 		// データが無ければ適当なノイズから新規生成.
 		// ノイズ計算を含めてかなり重いためAsync実行したい.
@@ -815,7 +815,7 @@ class ANglVoxelEngine;
 					// チャンク範囲の確認をしやすくするためにZゼロ平面より上には生成しない
 					if ((0.0f > cell_center_pos_world.Z))
 					{
-						noise = naga::NglVoxelNoise::Fbm<false>(cell_center_pos_world * default_chunk_gen_noise_scale, noise_octave_count).X;
+						noise = naga::VoxelNoise::Fbm<false>(cell_center_pos_world * default_chunk_gen_noise_scale, noise_octave_count).X;
 						//noise = 1.0f;
 					}
 #else
@@ -829,7 +829,7 @@ class ANglVoxelEngine;
 
 					/*
 					const auto noise_plane_sample_pos = FVector(cell_center_pos_world.X, cell_center_pos_world.Y, 0.0f);
-					const auto noise_plane_xy = naga::NglVoxelNoise::Fbm<false>(noise_plane_sample_pos * default_chunk_gen_noise_scale * 0.5f, 1).X;
+					const auto noise_plane_xy = naga::VoxelNoise::Fbm<false>(noise_plane_sample_pos * default_chunk_gen_noise_scale * 0.5f, 1).X;
 					noise += ((noise_plane_xy) - height_rate);
 					*/
 					
@@ -893,7 +893,7 @@ class ANglVoxelEngine;
 
 	}
 
-	void ANglVoxelEngine::UpdateRenderChunk(const TArray<FIntVector>& render_dirty_chunk_id_array)
+	void AVoxelEngine::UpdateRenderChunk(const TArray<FIntVector>& render_dirty_chunk_id_array)
 	{
 #if 1
 		UpdateRenderChunkSurfaceNets_NaiveVoxel(render_dirty_chunk_id_array);
@@ -902,7 +902,7 @@ class ANglVoxelEngine;
 #endif
 		//UpdateRenderChunkSurfaceNets_BitCompressionVoxel(render_dirty_chunk_id_array);
 	}
-	void ANglVoxelEngine::UpdateRenderChunkSurfaceNets_NaiveVoxel(const TArray<FIntVector>& render_dirty_chunk_id_array)
+	void AVoxelEngine::UpdateRenderChunkSurfaceNets_NaiveVoxel(const TArray<FIntVector>& render_dirty_chunk_id_array)
 	{
 		constexpr auto chunk_cell_pos_max = ChunkType::CHUNK_RESOLUTION() - 1;
 
@@ -1392,7 +1392,7 @@ class ANglVoxelEngine;
 	}
 
 	// デバッグ用のキューブ描画.
-	void ANglVoxelEngine::UpdateRenderChunkDebugCube(const TArray<FIntVector>& render_dirty_chunk_id_array)
+	void AVoxelEngine::UpdateRenderChunkDebugCube(const TArray<FIntVector>& render_dirty_chunk_id_array)
 	{
 		// 現状では非ゼロかどうかのみでVoxelの表示をする.
 		TArray<std::tuple<int, int, uint32_t>> x_row_visible_bits_work;
@@ -1422,7 +1422,7 @@ class ANglVoxelEngine;
 				}
 				else
 				{
-					UE_LOG(LogTemp, Fatal, TEXT("[ANglVoxelEngine] ChunkMesh Component Pool Empty."));
+					UE_LOG(LogTemp, Fatal, TEXT("[AVoxelEngine] ChunkMesh Component Pool Empty."));
 				}
 			}
 
@@ -1512,24 +1512,24 @@ class ANglVoxelEngine;
 		}
 	}
 	
-	float ANglVoxelEngine::GetVoxelSize(unsigned int lod) const
+	float AVoxelEngine::GetVoxelSize(unsigned int lod) const
 	{
 		return voxel_size_ * static_cast<float>(1 << lod);
 	}
-	FVector ANglVoxelEngine::CalcChunkVoxelMinPosition(const FIntVector& chunk, const FIntVector& pos, unsigned int lod) const
+	FVector AVoxelEngine::CalcChunkVoxelMinPosition(const FIntVector& chunk, const FIntVector& pos, unsigned int lod) const
 	{
 		const float lod_voxel_size = GetVoxelSize(lod);
 		const auto v = (FVector(chunk * ChunkType::CHUNK_RESOLUTION(lod) + pos)) * lod_voxel_size;
 		return v;
 	}
-	FVector ANglVoxelEngine::CalcChunkVoxelCenterPosition(const FIntVector& chunk, const FIntVector& pos, unsigned int lod) const
+	FVector AVoxelEngine::CalcChunkVoxelCenterPosition(const FIntVector& chunk, const FIntVector& pos, unsigned int lod) const
 	{
 		const float lod_voxel_size = GetVoxelSize(lod);
 		const auto v = (FVector(chunk * ChunkType::CHUNK_RESOLUTION(lod) + pos) + FVector(0.5f)) * lod_voxel_size;
 		return v;
 	}
 
-	UInstancedStaticMeshComponent* ANglVoxelEngine::GetChunkMeshComponentFromPool()
+	UInstancedStaticMeshComponent* AVoxelEngine::GetChunkMeshComponentFromPool()
 	{
 		if (0 >= chunk_mesh_component_pool_.Num())
 		{
@@ -1555,7 +1555,7 @@ class ANglVoxelEngine;
 		auto* comp = chunk_mesh_component_pool_.Pop();
 		return comp;
 	}
-	void ANglVoxelEngine::RestoreChunkMeshComponentToPool(UInstancedStaticMeshComponent* comp)
+	void AVoxelEngine::RestoreChunkMeshComponentToPool(UInstancedStaticMeshComponent* comp)
 	{
 		if (!comp)
 			return;

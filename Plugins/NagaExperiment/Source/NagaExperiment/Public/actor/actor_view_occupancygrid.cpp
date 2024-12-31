@@ -23,7 +23,7 @@ namespace
 {
 }
 
-ANglOccupancyGridTest::ANglOccupancyGridTest()
+AOccupancyGridTest::AOccupancyGridTest()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -45,7 +45,7 @@ ANglOccupancyGridTest::ANglOccupancyGridTest()
 	}
 }
 
-void ANglOccupancyGridTest::BeginPlay()
+void AOccupancyGridTest::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -79,7 +79,7 @@ void ANglOccupancyGridTest::BeginPlay()
 	}
 }
 
-void ANglOccupancyGridTest::Tick(float DeltaTime)
+void AOccupancyGridTest::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 

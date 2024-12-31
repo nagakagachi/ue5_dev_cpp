@@ -337,7 +337,7 @@ namespace naga
 
 
 // Sets default values
-ANglConstraintBasedPhysicsTest::ANglConstraintBasedPhysicsTest()
+AConstraintBasedPhysicsTest::AConstraintBasedPhysicsTest()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -346,13 +346,13 @@ ANglConstraintBasedPhysicsTest::ANglConstraintBasedPhysicsTest()
 	RootComponent = Cast<USceneComponent>(rootComp);
 }
 
-void ANglConstraintBasedPhysicsTest::OnConstruction(const FTransform& Transform)
+void AConstraintBasedPhysicsTest::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 }
 
 // Called when the game starts or when spawned
-void ANglConstraintBasedPhysicsTest::BeginPlay()
+void AConstraintBasedPhysicsTest::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -650,7 +650,7 @@ void ANglConstraintBasedPhysicsTest::BeginPlay()
 }
 
 // Called every frame
-void ANglConstraintBasedPhysicsTest::Tick(float DeltaTime)
+void AConstraintBasedPhysicsTest::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
@@ -722,7 +722,7 @@ void ANglConstraintBasedPhysicsTest::Tick(float DeltaTime)
 	constraint_solve_inst_mesh_comp_->MarkRenderStateDirty();
 }
 
-void ANglConstraintBasedPhysicsTest::AddDebugExForceSphere(const FVector& sphere_center, float sphere_radius, float intensity)
+void AConstraintBasedPhysicsTest::AddDebugExForceSphere(const FVector& sphere_center, float sphere_radius, float intensity)
 {
 	physics_particle_system_.AddDebugExForceSphere(FSphere(sphere_center - GetActorLocation(), sphere_radius), intensity);
 }

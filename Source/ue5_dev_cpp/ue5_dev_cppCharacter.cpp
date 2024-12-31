@@ -55,14 +55,6 @@ Aue5_dev_cppCharacter::Aue5_dev_cppCharacter()
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
-
-	/*
-	naga::NglOccupancyGrid occupancy_hg;
-	occupancy_hg.Initialize();
-	TArray<std::tuple<FVector, bool>> hit_array;
-	hit_array.Add({FVector(100.0f, 100.0f, 100.0f), true});
-	occupancy_hg.UpdateOccupancy(FVector(), hit_array);
-	*/
 }
 
 void Aue5_dev_cppCharacter::BeginPlay()

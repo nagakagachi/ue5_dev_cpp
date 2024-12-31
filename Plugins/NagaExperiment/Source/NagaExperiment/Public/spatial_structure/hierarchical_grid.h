@@ -632,23 +632,23 @@ namespace naga
 
 	using GridCellAddrType = uint32_t;
 
-	struct NglOccupancyGridLeafData
+	struct OccupancyGridLeafData
 	{
-		constexpr NglOccupancyGridLeafData()
+		constexpr OccupancyGridLeafData()
 		{
 			occupancy_4x4x4 = {};
 		}
-		constexpr NglOccupancyGridLeafData(uint64_t v)
+		constexpr OccupancyGridLeafData(uint64_t v)
 		{
 			occupancy_4x4x4 = v;
 		}
-		static constexpr NglOccupancyGridLeafData FullBrick()
+		static constexpr OccupancyGridLeafData FullBrick()
 		{
-			return NglOccupancyGridLeafData(~uint64_t(0));
+			return OccupancyGridLeafData(~uint64_t(0));
 		}
-		static constexpr NglOccupancyGridLeafData ZeroBrick()
+		static constexpr OccupancyGridLeafData ZeroBrick()
 		{
-			return NglOccupancyGridLeafData(uint64_t(0));
+			return OccupancyGridLeafData(uint64_t(0));
 		}
 
 		int Get(int x, int y, int z) const
@@ -683,7 +683,7 @@ namespace naga
 	};
 
 	// Raytrace階層Grid構造を使用してシーンのOccpancyGridを構築するクラス.
-	class NglOccupancyGrid
+	class HierarchicalOccupancyGrid
 	{
 	public:
 		static constexpr GridCellAddrType k_invalid_u32 = ~GridCellAddrType(0);
@@ -719,10 +719,10 @@ namespace naga
 
 
 	public:
-		NglOccupancyGrid()
+		HierarchicalOccupancyGrid()
 		{
 		}
-		~NglOccupancyGrid()
+		~HierarchicalOccupancyGrid()
 		{
 		}
 
@@ -906,7 +906,7 @@ namespace naga
 		// MultiGridの深度移動チェック.
 		struct TraceCellDepthDescendingCheckerForMultiGrid
 		{
-			const NglOccupancyGrid& grid_impl;
+			const HierarchicalOccupancyGrid& grid_impl;
 
 
 			// Cellとのヒット処理. システムからレイの基本情報とトレース対象のCell情報, レイのPayloadを受け取って判定やPayload更新をする.
@@ -922,7 +922,7 @@ namespace naga
 		// MultiGrid Cellヒット処理とそのPayloadの定義.
 		struct MultiGridTraceCellHitProcess
 		{
-			const NglOccupancyGrid& grid_impl;
+			const HierarchicalOccupancyGrid& grid_impl;
 
 			struct Payload
 			{
@@ -975,7 +975,7 @@ namespace naga
 		// MultiGrid Brick Cellヒット処理とそのPayloadの定義. MultiGridTraceCellHitProcessとは違い更にBrick内OccupancyCellとのヒットを取る.
 		struct MultiGridTraceCellBrickHitProcess
 		{
-			const NglOccupancyGrid& grid_impl;
+			const HierarchicalOccupancyGrid& grid_impl;
 
 			struct Payload
 			{
@@ -1215,7 +1215,7 @@ namespace naga
 
 		// リーフのBrickプール.
 		TBitArray<> bit_occupancy_brick_pool_flag_ = {};
-		TArray<NglOccupancyGridLeafData> bit_occupancy_brick_pool_ = {};
+		TArray<OccupancyGridLeafData> bit_occupancy_brick_pool_ = {};
 
 		TBitArray<> particle_pool_flag_ = {};
 		struct ParticleTestData
@@ -1235,7 +1235,7 @@ namespace naga
 	// 格子ベース流体用SparseGrid構造.
 	//	近傍処理などのため階層化はなし. 実態はHashGrid.
 	template<int k_num_level = 1>
-	class NglSparseGridFluid
+	class SparseGridFluid
 	{
 	public:
 		static constexpr int k_max_level = k_num_level - 1;
@@ -1479,10 +1479,10 @@ namespace naga
 		}
 
 	public:
-		NglSparseGridFluid()
+		SparseGridFluid()
 		{
 		}
-		~NglSparseGridFluid()
+		~SparseGridFluid()
 		{
 			Finalize();
 		}

@@ -15,7 +15,7 @@
 #include "voxel_engine.generated.h"
 
 
-class ANglVoxelEngine;
+class AVoxelEngine;
 
 namespace naga
 {
@@ -523,37 +523,37 @@ namespace naga
 
 
 // 非同期タスク.
-//	寿命はオーナーのANglVoxelEngineが管理する.
-class NglVoxelEngineAsyncTask : public naga::FAsyncTaskBase
+//	寿命はオーナーのAVoxelEngineが管理する.
+class VoxelEngineAsyncTask : public naga::FAsyncTaskBase
 {
 public:
-	NglVoxelEngineAsyncTask();
-	~NglVoxelEngineAsyncTask();
+	VoxelEngineAsyncTask();
+	~VoxelEngineAsyncTask();
 
-	bool Initialize(ANglVoxelEngine* owner);
+	bool Initialize(AVoxelEngine* owner);
 	void Finalize();
 
 private:
 	// 非同期実行関数
 	void AsyncUpdate() override;
 private:
-	ANglVoxelEngine* owner_ = nullptr;
+	AVoxelEngine* owner_ = nullptr;
 };
 
 // Actor.
 UCLASS()
-class ANglVoxelEngine : public AActor
+class AVoxelEngine : public AActor
 {
 	GENERATED_BODY()
 	
-	friend class NglVoxelEngineAsyncTask;
+	friend class VoxelEngineAsyncTask;
 
 	// 1byteボクセル. 可能なら1bitvoxelまで圧縮できると良いかも.
 	using ChunkType = naga::SimpleOverlapBothVoxelChunkT<unsigned char, 16, true>;
 
 public:
-	ANglVoxelEngine();
-	~ANglVoxelEngine();
+	AVoxelEngine();
+	~AVoxelEngine();
 
 protected:
 	virtual void BeginPlay() override;
@@ -659,7 +659,7 @@ public:
 	float												default_chunk_noise_scale_ = 0.0006f;
 
 	// 非同期タスク
-	NglVoxelEngineAsyncTask									async_task_;
+	VoxelEngineAsyncTask									async_task_;
 
 	TArray<FIntVector>										stream_out_chunk_array_[2];
 	TArray<FIntVector>										stream_in_chunk_array_[2];

@@ -73,12 +73,12 @@ static void GetCurrentViewportInfo(const UWorld* world, FVector2D& out_viewport_
 
 // ViewからCollisionQueryで収集した情報からOccupancyGrid的な情報を構築するテスト.
 UCLASS()
-class NAGAEXPERIMENT_API ANglOccupancyGridTest : public AActor
+class NAGAEXPERIMENT_API AOccupancyGridTest : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	ANglOccupancyGridTest();
+	AOccupancyGridTest();
 
 protected:
 	virtual void BeginPlay() override;
@@ -119,9 +119,9 @@ private:
 private:
 	int debug_raster_index_ = 0;
 
-	naga::NglSparseGridFluid<1> dcgrid_ = {};
+	naga::SparseGridFluid<1> dcgrid_ = {};
 
-	naga::NglOccupancyGrid ocgrid_ = {};
+	naga::HierarchicalOccupancyGrid ocgrid_ = {};
 };
 
 

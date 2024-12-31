@@ -186,13 +186,13 @@ namespace naga
 
 // Actor.
 UCLASS()
-class ANglConstraintBasedPhysicsTest : public AActor
+class AConstraintBasedPhysicsTest : public AActor
 {
 	GENERATED_BODY()
 	
 public:	
 	// Sets default values for this actor's properties
-	ANglConstraintBasedPhysicsTest();
+	AConstraintBasedPhysicsTest();
 
 	UFUNCTION(BlueprintCallable)
 		void AddDebugExForceSphere(const FVector& sphere_center, float sphere_radius, float intensity);

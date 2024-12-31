@@ -180,13 +180,13 @@ void BitonicSortDispatchReduceV0_Uint2(uint3 dispatch_id : SV_DispatchThreadID, 
 
     const auto sort_element_count = [要素数];// 2の冪乗の必要あり.
 	const auto sort_cs_thread_count = [スレッドグループ数];
-	const auto m_local_bit_count = NglMathUtil::LeastSignificantBit(sort_cs_thread_count) + 1;
+	const auto m_local_bit_count = math::LeastSignificantBit(sort_cs_thread_count) + 1;
 
 	//グループスレッドが連続したn-byteへアクセスするように事前計算データを補正する.
 	// SharedMemory利用版ではここでlinear_access_maskが7になるようにしないとソート結果がほんの少し失敗する. グループスレッド数512, 要素数2048, linear_access_maskが0だと発生. 要調査.
 	const uint32_t linear_access_byte_size = 64; // 連続アクセスバイトサイズ.
 	// 連続アクセスバイトサイズを要素数換算してマスク作成.
-	const uint32_t linear_access_mask = (uint32_t)(linear_access_byte_size / sizeof(NglUint2) - 1);
+	const uint32_t linear_access_mask = (uint32_t)(linear_access_byte_size / sizeof(Uint2) - 1);
 
     // 前ステップをいくつのディスパッチに分割するか
 	uint32_t dispatch_count = 0;
@@ -199,7 +199,7 @@ void BitonicSortDispatchReduceV0_Uint2(uint3 dispatch_id : SV_DispatchThreadID, 
 		{
 			for (uint32_t j = i; j > 0; j = j >> 1)
 			{
-				proxy->test_sort_step_info_array_[step_index].x = NglMathUtil::LeastSignificantBit(i << 1);
+				proxy->test_sort_step_info_array_[step_index].x = math::LeastSignificantBit(i << 1);
 				proxy->test_sort_step_info_array_[step_index].y = j;
 				proxy->test_sort_step_info_array_[step_index].z = 0;// ディスパッチ分割方法によって変わるので後段で有効な値が設定される
 
@@ -215,11 +215,11 @@ void BitonicSortDispatchReduceV0_Uint2(uint3 dispatch_id : SV_DispatchThreadID, 
 		uint32_t start_stage = 0;
 		for (int step_index = 0; step_index != sort_step_count; step_index++) {
 			current_mask |= proxy->test_sort_sub_step_id_array_[step_index];
-			if ((step_index == (sort_step_count - 1)) || (NglMathUtil::BitCount(current_mask | proxy->test_sort_sub_step_id_array_[step_index + 1]) > m_local_bit_count))
+			if ((step_index == (sort_step_count - 1)) || (math::BitCount(current_mask | proxy->test_sort_sub_step_id_array_[step_index + 1]) > m_local_bit_count))
 			{
 				{
 					//adjust granurarity when working set bits are not fully populated
-					const uint32_t group_scale = NglMathUtil::BitCount(current_mask);
+					const uint32_t group_scale = math::BitCount(current_mask);
 					uint32_t l = 1;
 					for (int k = group_scale; k < m_local_bit_count; k++)
 					{
@@ -232,9 +232,9 @@ void BitonicSortDispatchReduceV0_Uint2(uint3 dispatch_id : SV_DispatchThreadID, 
 				//setup constants
 				//int bit0, bit1, bit2;
 				const uint32_t mask = current_mask | (sort_element_count << 1);
-				const int bit0 = NglMathUtil::LeastSignificantBit(~mask);
-				const int bit1 = NglMathUtil::LeastSignificantBit(mask & ~((((uint32_t)1) << bit0) - 1));
-				const int bit2 = NglMathUtil::LeastSignificantBit(~mask & ~((((uint32_t)1) << bit1) - 1));
+				const int bit0 = math::LeastSignificantBit(~mask);
+				const int bit1 = math::LeastSignificantBit(mask & ~((((uint32_t)1) << bit0) - 1));
+				const int bit2 = math::LeastSignificantBit(~mask & ~((((uint32_t)1) << bit1) - 1));
 
 				// ディスパッチ単位用情報
 				auto sort_dispatch_param = &proxy->test_sort_dispatch_param_array_[dispatch_count];
