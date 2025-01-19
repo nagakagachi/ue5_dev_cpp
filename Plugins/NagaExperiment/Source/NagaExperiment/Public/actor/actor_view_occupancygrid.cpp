@@ -75,7 +75,7 @@ void AOccupancyGridTest::BeginPlay()
 	
 	if (debug_ocgrid_)
 	{
-		ocgrid_.Initialize(4000.0f);
+		ocgrid_.Initialize(5000.0f);
 	}
 }
 
@@ -165,16 +165,20 @@ void AOccupancyGridTest::Tick(float DeltaTime)
 
 			col_query_param.AddIgnoredActor(plc->GetPawnOrSpectator());
 		}
+#if 1
 		{
-			constexpr float k_cast_angle_rate = 0.5f;
+			constexpr float k_cast_angle_center_exp = 1.8f;// Frustum内サンプルレイの画面中心密度増加用の指数 [0.0,].
+			constexpr float k_cast_angle_rate = 0.98f;// Frustum内サンプルレイの画面中心基準の範囲係数 [0.0, 1.0].
 			constexpr int k_per_frame_sample_count = 100;
 			for (auto i = 0; i < k_per_frame_sample_count; ++i)
 			{
-				const float raster_u = (FMath::FRand() - 0.5)* k_cast_angle_rate + 0.5;
-				const float raster_v = (FMath::FRand() - 0.5)* k_cast_angle_rate + 0.5;
-				const auto dir_in_frustum = frustum_corner_nn + (view_right * vx * 2.0f * raster_u) + (view_up * vy * 2.0f * raster_v);
+				float raster_center_u = (FMath::FRand() * 2.0f) - 1.0;
+				float raster_center_v = (FMath::FRand() * 2.0f) - 1.0;
+				raster_center_u = FMath::Pow(FMath::Abs(raster_center_u), k_cast_angle_center_exp) * FMath::Sign(raster_center_u);
+				raster_center_v = FMath::Pow(FMath::Abs(raster_center_v), k_cast_angle_center_exp) * FMath::Sign(raster_center_v);
+				const auto dir_in_frustum = view_dir + (view_right * vx * raster_center_u*k_cast_angle_rate) + (view_up * vy * raster_center_v*k_cast_angle_rate);
+				
 				const auto ray_end = dir_in_frustum * 5000.0f + view_location;
-
 
 				FHitResult hit_r;
 				bool is_hit = false;
@@ -183,10 +187,24 @@ void AOccupancyGridTest::Tick(float DeltaTime)
 				{
 					is_hit = true;
 				}
+				
 				hit_samples.Add(std::make_tuple(is_hit ? hit_r.Location : ray_end, is_hit));
 				hit_samples_normal.Add(is_hit ? hit_r.Normal : FVector::UnitX());
 			}
 		}
+#else
+		// 1サンプル.
+		const auto ray_end = view_dir * 5000.0f + view_location;
+		FHitResult hit_r;
+		bool is_hit = false;
+		// レイキャスト.
+		if (GetWorld()->LineTraceSingleByChannel(hit_r, view_location, ray_end, ECollisionChannel::ECC_WorldStatic, col_query_param))
+		{
+			is_hit = true;
+		}
+		hit_samples.Add(std::make_tuple(is_hit ? hit_r.Location : ray_end, is_hit));
+		hit_samples_normal.Add(is_hit ? hit_r.Normal : FVector::UnitX());
+#endif
 	}
 
 	
@@ -321,6 +339,7 @@ void AOccupancyGridTest::Tick(float DeltaTime)
 		// Occupancyをコリジョンレイで更新.
 		ocgrid_.UpdateOccupancy(view_location, hit_samples);
 
+		// デバッグパーティクルの更新.
 		ocgrid_.UpdateParticle(DeltaTime);
 
 
@@ -344,33 +363,32 @@ void AOccupancyGridTest::Tick(float DeltaTime)
 				}
 			}
 
-
-			if (debug_ocgrid_brick_)
+			// OccupancyGrid可視化.
+			if (debug_draw_ocgrid_)
 			{
 				const auto grid_aabb_min_wgs = ocgrid_.bgrid_.grid_aabb_min_wgs_;
 
-
-				// OccupancyGridレイトレースヒット可視化.
-				constexpr float k_view_ray_trace_length = 500.0f;
-				FVector chit_pos, chit_normal;
-				if (ocgrid_.TraceSingle(chit_pos, chit_normal, view_location, view_location + view_dir * k_view_ray_trace_length))
+				// レイトレースヒット可視化.
 				{
-					// View Rayのヒット位置にデバッグCube描画.
-					const auto hit_pos_ws = chit_pos;
+					constexpr float k_view_ray_trace_length = 2000.0f;
+					FVector chit_pos, chit_normal;
+					if (ocgrid_.TraceSingle(chit_pos, chit_normal, view_location, view_location + view_dir * k_view_ray_trace_length))
+					{
+						// View Rayのヒット位置にデバッグCube描画.
+						const auto hit_pos_ws = chit_pos;
 
-					const auto dist_to_hit_pos = FVector::Distance(chit_pos, view_location);
-					bool is_out_of_range = k_view_ray_trace_length < dist_to_hit_pos;
+						const auto dist_to_hit_pos = FVector::Distance(chit_pos, view_location);
+						bool is_out_of_range = k_view_ray_trace_length < dist_to_hit_pos;
 
 
-					FTransform tr(hit_pos_ws);
-					tr.SetScale3D(FVector(0.5f, 0.5f, 4.0f) * 0.2f);
-					tr.SetRotation(FQuat::FindBetween(FVector::ZAxisVector, chit_normal));
+						FTransform tr(hit_pos_ws);
+						tr.SetScale3D(FVector(0.5f, 0.5f, 4.0f) * 0.2f);
+						tr.SetRotation(FQuat::FindBetween(FVector::ZAxisVector, chit_normal));
 
-					const auto inst_index = ismc_occupancygrid_->AddInstance(tr, true);
+						const auto inst_index = ismc_occupancygrid_->AddInstance(tr, true);
+					}
 				}
 
-
-				// OccupancyGrid可視化.
 				if (true)
 				{
 					constexpr float k_cell_lod_base_distance = 9000.0f;// デバッグ表示LOD基準距離
@@ -474,18 +492,36 @@ void AOccupancyGridTest::Tick(float DeltaTime)
 									{
 										if (k_cell_brick_detail_level_value > cell_detail_level)
 										{
-											// 描画.
+											// Cell描画.
 											FTransform tr(cell_center_pos_ws);
 											tr.SetScale3D(FVector(cell_size * 0.95f / 100.0f));
 											const auto inst_index = ismc_occupancygrid_->AddInstance(tr, true);
 											const auto cell_visualize_id = root_cell_id + cell_range;
 											ismc_occupancygrid_->SetCustomData(inst_index, { (float)cell_visualize_id.X, (float)cell_visualize_id.Y , (float)cell_visualize_id.Z });
-
 										}
 										else if (ocgrid_.k_multigrid_max_depth == depth)
 										{
-											// Brick描画.
-											AddBrickDrawInstance(cell_data, cell_size, cell_min_pos_ws, root_cell_id, cell, depth);
+											if(debug_draw_ocgrid_brick_)
+											{
+												// Brick描画.
+												AddBrickDrawInstance(cell_data, cell_size, cell_min_pos_ws, root_cell_id, cell, depth);
+											}
+											else
+											{
+												// Cell描画.
+												const auto& brick = ocgrid_.bit_occupancy_brick_pool_[cell_data];
+												// Brick 64要素の一定以上が占有されていれば描画.
+												if(0 != naga::math::BitCount(brick.occupancy_4x4x4))
+												{
+													const float occupancy_rate = static_cast<float>(naga::math::BitCount(brick.occupancy_4x4x4)) / 64.0f;
+													
+													FTransform tr(cell_center_pos_ws);
+													tr.SetScale3D(FVector(cell_size * FMath::Lerp(0.1f, 0.7f, FMath::Clamp(occupancy_rate * 8.0f, 0.0f, 1.0f)) / 100.0f));
+													const auto inst_index = ismc_occupancygrid_->AddInstance(tr, true);
+
+													ismc_occupancygrid_->SetCustomData(inst_index, { occupancy_rate, 0.0f, 0.0f });
+												}
+											}
 										}
 									}
 

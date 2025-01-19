@@ -683,6 +683,7 @@ namespace naga
 	};
 
 	// Raytrace階層Grid構造を使用してシーンのOccpancyGridを構築するクラス.
+	// 階層OctreeのRay Traversal機能サポート.
 	class HierarchicalOccupancyGrid
 	{
 	public:
@@ -693,7 +694,7 @@ namespace naga
 		// MultigridのRoot下Cell一つの要素数.
 		static constexpr int k_child_cell_vol3d = k_child_cell_reso * k_child_cell_reso * k_child_cell_reso;
 		// Multigridのレイヤ数. 0でルートのみ.
-		static constexpr int k_multigrid_max_depth = 2;
+		static constexpr int k_multigrid_max_depth = 3;
 
 
 		// セルデータ.
@@ -745,75 +746,79 @@ namespace naga
 			return is_initialized_;
 		}
 
-		// 視点からのレイヒット地点にOccupanncyを登録する.
-		//	Octree管理.
-		void UpdateOccupancy(const FVector& sample_ray_origin, const TArray<std::tuple<FVector, bool>>& sample_ray_end_and_ishit)
+		struct LocalFunc
 		{
-			// 移動によるシフトコピーなどは後で.
-
-
-			auto AllocNewCellOrBrick = [this](int depth)
+			static auto AllocNewCell(HierarchicalOccupancyGrid* p_system) ->int
 			{
 				int new_element_index = -1;
-				if (depth < k_multigrid_max_depth)
 				{
 					// リーフ以外ではCell割当.
-					auto pool_index = cell_pool_flag_.FindAndSetFirstZeroBit();
+					auto pool_index = p_system->cell_pool_flag_.FindAndSetFirstZeroBit();
 					if (INDEX_NONE == pool_index)
 					{
-						pool_index = cell_pool_flag_.Num();
-						cell_pool_flag_.Add(true);
-						cell_pool_.Add(CellData::GetInvalidFilled());// Cellはすべて無効要素で初期化.
+						pool_index = p_system->cell_pool_flag_.Num();
+						p_system->cell_pool_flag_.Add(true);
+						p_system->cell_pool_.Add(CellData::GetInvalidFilled());// Cellはすべて無効要素で初期化.
 					}
 					else
 					{
-						cell_pool_flag_[pool_index] = true;
-						cell_pool_[pool_index] = CellData::GetInvalidFilled();
-					}
-					new_element_index = pool_index;
-				}
-				else
-				{
-					// リーフではBrick割当.
-					auto pool_index = bit_occupancy_brick_pool_flag_.FindAndSetFirstZeroBit();
-					if (INDEX_NONE == pool_index)
-					{
-						pool_index = bit_occupancy_brick_pool_flag_.Num();
-						bit_occupancy_brick_pool_flag_.Add(true);
-						bit_occupancy_brick_pool_.Add({});// Brickはゼロクリア.
-					}
-					else
-					{
-						bit_occupancy_brick_pool_flag_[pool_index] = true;
-						bit_occupancy_brick_pool_[pool_index] = {};
+						p_system->cell_pool_flag_[pool_index] = true;
+						p_system->cell_pool_[pool_index] = CellData::GetInvalidFilled();
 					}
 					new_element_index = pool_index;
 				}
 				return new_element_index;
-			};
-
-			for (int i = 0; i < sample_ray_end_and_ishit.Num(); ++i)
+			}
+			
+			static auto AllocNewBrick(HierarchicalOccupancyGrid* p_system) ->int
 			{
-				// ヒットサンプルのみ.
-				if (!std::get<1>(sample_ray_end_and_ishit[i]))
-					continue;
+				int new_element_index = -1;
+				{
+					// リーフではBrick割当.
+					auto pool_index = p_system->bit_occupancy_brick_pool_flag_.FindAndSetFirstZeroBit();
+					if (INDEX_NONE == pool_index)
+					{
+						pool_index = p_system->bit_occupancy_brick_pool_flag_.Num();
+						p_system->bit_occupancy_brick_pool_flag_.Add(true);
+						p_system->bit_occupancy_brick_pool_.Add({});// Brickはゼロクリア.
+					}
+					else
+					{
+						p_system->bit_occupancy_brick_pool_flag_[pool_index] = true;
+						p_system->bit_occupancy_brick_pool_[pool_index] = {};
+					}
+					new_element_index = pool_index;
+				}
+				return new_element_index;
+			}
 
-				// サンプル位置のCell及びBrick書き込み.
-				const auto root_cell = bgrid_.WorldToRootGridSpace(std::get<0>(sample_ray_end_and_ishit[i]));
+			template<bool IS_ALLOC = true>
+			static auto SearchOrAddBrick(HierarchicalOccupancyGrid* p_system, const FVector& pos_ws) -> std::tuple<GridCellAddrType, FVector>
+			{
+				const auto root_cell = p_system->bgrid_.WorldToRootGridSpace(pos_ws);
 				const auto root_cell_i = math::FVectorFloorToInt(root_cell);// 0をまたいで負の場合があるためint丸めでは丸め方向が一貫しないためFloor.
 				const auto root_cell_frac = root_cell - FVector(root_cell_i);
-				if (bgrid_.IsInner(root_cell_i))
+			
+				if (p_system->bgrid_.IsInner(root_cell_i))
 				{
 					// ルートデータにdepth1のCellを割り当て.
-					auto root_cell_index = bgrid_.CalcRootCellIndex(root_cell_i);
-					if (k_invalid_u32 == bgrid_.root_cell_data_[root_cell_index])
+					auto root_cell_index = p_system->bgrid_.CalcRootCellIndex(root_cell_i);
+					if (k_invalid_u32 == p_system->bgrid_.root_cell_data_[root_cell_index])
 					{
-						// CellまたはBrick割当.
-						bgrid_.root_cell_data_[root_cell_index] = AllocNewCellOrBrick(0);
+						if constexpr (IS_ALLOC)
+						{
+							// CellまたはBrick割当.
+							p_system->bgrid_.root_cell_data_[root_cell_index] = AllocNewCell(p_system);
+						}
+						else
+						{
+							// 検索のみでは未発見としてリターン.
+							return std::make_tuple(k_invalid_u32, FVector{});
+						}
 					}
 
 					// depth1以降の CellまたはBrick の割当.
-					auto cell_addr = bgrid_.root_cell_data_[root_cell_index];
+					auto cell_addr = p_system->bgrid_.root_cell_data_[root_cell_index];
 					auto cell_frac = root_cell_frac;
 					for (int depth_i = 1; depth_i <= k_multigrid_max_depth; ++depth_i)
 					{
@@ -821,21 +826,101 @@ namespace naga
 						const auto child_cell_pos_i = FIntVector(child_cell_pos);// 0をまたがないはずなのでFloorより高速なint丸め.
 						cell_frac = child_cell_pos - FVector(child_cell_pos_i);// さらに子CellのFracへ更新.
 						const auto child_cell_index = (child_cell_pos_i.X) + (child_cell_pos_i.Y * k_child_cell_reso) + (child_cell_pos_i.Z * k_child_cell_reso * k_child_cell_reso);
-						if (k_invalid_u32 == cell_pool_[cell_addr].child_addr[child_cell_index])
+						if (k_invalid_u32 == p_system->cell_pool_[cell_addr].child_addr[child_cell_index])
 						{
-							cell_pool_[cell_addr].child_addr[child_cell_index] = AllocNewCellOrBrick(depth_i);
+							if(k_multigrid_max_depth > depth_i)
+							{
+								// Cell.
+								if constexpr (IS_ALLOC)
+								{
+									p_system->cell_pool_[cell_addr].child_addr[child_cell_index] = AllocNewCell(p_system);// 未割り当てなら割当.
+								}
+								else
+								{	
+									return std::make_tuple(k_invalid_u32, FVector{});// 検索のみでは未発見としてリターン.
+								}
+							}
+							else
+							{
+								// Brick.
+								if constexpr (IS_ALLOC)
+								{
+									p_system->cell_pool_[cell_addr].child_addr[child_cell_index] = AllocNewBrick(p_system);// 未割り当てなら割当.
+								}
+								else
+								{	
+									return std::make_tuple(k_invalid_u32, FVector{});// 検索のみでは未発見としてリターン.
+								}
+							}
 						}
-						cell_addr = cell_pool_[cell_addr].child_addr[child_cell_index];// 子階層へ移動.
+						cell_addr = p_system->cell_pool_[cell_addr].child_addr[child_cell_index];// 子階層へ移動.
 					}
-					// NOTE. cell_addrにはリーフCellに割り当てられたBrickアドレスが格納されている.
+				
+					return std::make_tuple(static_cast<uint32_t>(cell_addr), cell_frac);
+				}
+				return std::make_tuple(k_invalid_u32, FVector{});
+			}
+			// 座標に対応するBrickを検索. LeafBrickまで到達できなかった場合は k_invalid_u32 を返す.
+			static auto SearchBrick(HierarchicalOccupancyGrid* p_system, const FVector& pos_ws) -> std::tuple<GridCellAddrType, FVector>
+			{
+				return SearchOrAddBrick<false>(p_system, pos_ws);
+			}
+		};
+		// 視点からのレイヒット地点にOccupanncyを登録する.
+		//	Octree管理.
+		void UpdateOccupancy(const FVector& sample_ray_origin, const TArray<std::tuple<FVector, bool>>& sample_ray_end_and_ishit)
+		{
+			// 移動によるシフトコピーなどは後で.
 
 
-					// 検索または新規割当された4x4x4 Brickへ書き込み.
-					const auto brick_pos = cell_frac * 4;// リーフCellでのFracを利用してBrick内位置を計算.
-					const auto brick_pos_i = FIntVector(brick_pos);// 0をまたがないはずなのでFloorより高速んはint丸めで済ませる.
-					// or で専有ビット書き込み.
-					auto& brick = bit_occupancy_brick_pool_[cell_addr];
-					brick.Set1(brick_pos_i.X, brick_pos_i.Y, brick_pos_i.Z);
+			// Occupancyの追加.
+			for (int i = 0; i < sample_ray_end_and_ishit.Num(); ++i)
+			{
+				// ヒットサンプルのみ.
+				if (!std::get<1>(sample_ray_end_and_ishit[i]))
+					continue;
+
+				const auto hit_pos = std::get<0>(sample_ray_end_and_ishit[i]);
+				// 表面ヒット位置からオフセットした位置を採用する.
+				constexpr float k_sample_bias = 0.0f;//10.0f;
+				const auto biased_hit_pos = hit_pos - (hit_pos - sample_ray_origin).GetSafeNormal() * k_sample_bias;
+				
+				const auto brick_addr_frac = LocalFunc::SearchOrAddBrick(this, biased_hit_pos);
+
+				const auto brick_addr = std::get<0>(brick_addr_frac);
+				if(k_invalid_u32 != brick_addr)
+				{
+					// リーフの4x4x4 Brickへ書き込み.
+					const auto brick_pos_i = FIntVector(std::get<1>(brick_addr_frac) * k_child_cell_reso);// 0をまたがないはずなのでFloorより高速なint丸めで済ませる
+					bit_occupancy_brick_pool_[std::get<0>(brick_addr_frac)].Set1(brick_pos_i.X, brick_pos_i.Y, brick_pos_i.Z);
+				}
+			}
+
+			// Occupancyの除去.
+			//	sample ray　の視点終点の間に存在するBrickはすでに存在しないので除去することで, 動的なシーンに対応する.
+			for (int i = 0; i < sample_ray_end_and_ishit.Num(); ++i)
+			{
+				FVector hit_pos, hit_normal;
+
+				const auto sample_hit_pos = std::get<0>(sample_ray_end_and_ishit[i]);
+				// SampleRayのヒット位置から一定距離バイアスをかけた位置でクエリを発行. そこまでにヒットしたBrickはすでに実際のシーンにオブジェクトが存在しなくなっているとして除去する.
+				FVector sample_dir;
+				float sample_length;
+				(sample_hit_pos - sample_ray_origin).ToDirectionAndLength(sample_dir, sample_length);
+				constexpr float k_sample_bias = 100.0f;
+				if(k_sample_bias < sample_length)
+				{
+					const auto biased_sample_hit_pos =  sample_ray_origin + sample_dir * (sample_length - k_sample_bias);
+					if(TraceSingle(hit_pos, hit_normal, sample_ray_origin, biased_sample_hit_pos))
+					{
+						const auto brick_addr_frac = LocalFunc::SearchBrick(this, hit_pos);
+						if(k_invalid_u32 != std::get<0>(brick_addr_frac))
+						{
+							// リムーブする.
+							const auto brick_pos_i = FIntVector(std::get<1>(brick_addr_frac) * k_child_cell_reso);// 0をまたがないはずなのでFloorより高速なint丸めで済ませる
+							bit_occupancy_brick_pool_[std::get<0>(brick_addr_frac)].Set0(brick_pos_i.X, brick_pos_i.Y, brick_pos_i.Z);
+						}
+					}
 				}
 			}
 		}
@@ -919,7 +1004,7 @@ namespace naga
 			}
 		};
 
-		// MultiGrid Cellヒット処理とそのPayloadの定義.
+		// MultiGrid Cellヒット処理とそのPayloadの定義. Brickとの処理はしないバージョン.
 		struct MultiGridTraceCellHitProcess
 		{
 			const HierarchicalOccupancyGrid& grid_impl;
@@ -972,8 +1057,8 @@ namespace naga
 			}
 		};
 
-		// MultiGrid Brick Cellヒット処理とそのPayloadの定義. MultiGridTraceCellHitProcessとは違い更にBrick内OccupancyCellとのヒットを取る.
-		struct MultiGridTraceCellBrickHitProcess
+		// MultiGrid Brick Cell 最近接ヒット処理とそのPayloadの定義. MultiGridTraceCellHitProcessとは違い更にBrick内OccupancyCellとのヒットを取る.
+		struct MultiGridTraceCellBrickClosestHitProcess
 		{
 			const HierarchicalOccupancyGrid& grid_impl;
 
@@ -1116,7 +1201,7 @@ namespace naga
 		bool TraceSingle(FVector& out_hit_pos_ws, FVector& out_hit_normal_ws, const FVector& ray_origin_ws, const FVector& ray_end_ws) const
 		{
 			// MultiGrid Brickトレース
-			MultiGridTraceCellBrickHitProcess cell_hit_process = { *this };
+			MultiGridTraceCellBrickClosestHitProcess cell_hit_process = { *this };
 
 			decltype(cell_hit_process)::Payload payload = {};
 			// MultiGridの深度移動判定.

@@ -106,7 +106,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool debug_ocgrid_ = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-		bool debug_ocgrid_brick_ = false;
+		bool debug_draw_ocgrid_ = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool debug_draw_ocgrid_brick_ = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool debug_ocgrid_ptcl_ = false;
 
