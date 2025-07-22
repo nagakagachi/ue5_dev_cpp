@@ -5,7 +5,10 @@
 
 #include "DynamicResolutionState.h"
 #include "FXRenderingUtils.h"
+
 #include "PostProcess/PostProcessInputs.h"
+//#include "Runtime/Renderer/Internal/PostProcess/PostProcessInputs.h"
+
 #include "Rendering/ViewExtensionSampleShader.h"
 #include "Subsystem/ViewExtensionSampleSubsystem.h"
 

@@ -288,7 +288,7 @@ void AOccupancyGridTest::Tick(float DeltaTime)
 
 #if 1
 						// 速度ベクトルの大きさによるスケール補正.
-						const auto base_scale = FVector(1.0f, 0.1f, 0.1f);
+						const auto base_scale = FVector(0.5f, 0.02f, 0.02f);
 						const auto cell_scale_rate = FMath::Lerp(0.09f, 1.0f, FMath::Clamp(vel_len / 90.0f, 0.0f, 1.0f));
 						const auto vel_dir_quat = cell_vel.ToOrientationQuat();
 

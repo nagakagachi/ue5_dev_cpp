@@ -10,6 +10,7 @@ public class ViewExtensionSample : ModuleRules
 		
 		PublicIncludePaths.AddRange(
 			new string[] {
+				"Runtime/Renderer/Internal",
 				// ... add public include paths required here ...
 			}
 			);
