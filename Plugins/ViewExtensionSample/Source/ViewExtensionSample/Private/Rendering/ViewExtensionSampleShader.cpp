@@ -29,6 +29,8 @@ IMPLEMENT_GLOBAL_SHADER(FSsQuadTreeDebugPS, "/ViewExtensionSampleShaders/Private
 
 
 
+IMPLEMENT_GLOBAL_SHADER(FVonoroiCellSeedForSsSurfaceEdgeBlend, "/ViewExtensionSampleShaders/Private/SsSurfaceEdgeBlend/ss_surface_edge_blend.usf", "SeedPass", SF_Compute );
+IMPLEMENT_GLOBAL_SHADER(FScreenSpaceSurfaceEdgeBlendCS, "/ViewExtensionSampleShaders/Private/SsSurfaceEdgeBlend/ss_surface_edge_blend.usf", "MainPass", SF_Compute );
 
 
 

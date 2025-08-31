@@ -34,6 +34,12 @@ public:
 	bool enable_sssp_mip_display = false;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSinglePlaneMip", meta = (ClampMin = -1, ClampMax = 15))
 	int sssp_mip_display_level = 0;
+
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSurfaceEdgeBlend")
+	bool enable_ss_surface_edge_blend = false;
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="ScreenSpaceSurfaceEdgeBlend")
+	float ss_surface_edge_blend_pixel_width = 30.0f;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="HistoryTest")
 	bool enable_history_test = false;
@@ -105,6 +111,11 @@ public:
 	bool enable_history_test = false;
 	
 	bool enable_worldnormal_unlit = false;
+
+	// Mesh Blend実装検証.
+	bool enable_ss_surface_edge_blend = false;
+	float ss_surface_edge_blend_pixel_width = 30.0f;
+	
 
 	bool enable_aniso_kuwahara = false;
 	float aniso_kuwahara_aniso_control = 1.0f;

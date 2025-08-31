@@ -547,9 +547,93 @@ public:
 
 
 
+class FVonoroiCellSeedForSsSurfaceEdgeBlend : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FVonoroiCellSeedForSsSurfaceEdgeBlend);
+	SHADER_USE_PARAMETER_STRUCT(FVonoroiCellSeedForSsSurfaceEdgeBlend, FGlobalShader);
 
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewParam)
+	
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, EdgeSrcGBufferNormal)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, EdgeSrcGBufferPbr)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, EdgeSrcGBufferBcAo)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, EdgeSrcDepthTexture)
+		SHADER_PARAMETER(FUintVector2, EdgeSrcDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, EdgeSrcSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, EdgeDstTexture)
+		SHADER_PARAMETER(FUintVector2, EdgeDstDimensions)
+	
+	END_SHADER_PARAMETER_STRUCT()
 
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		//return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
+	}
+};
 
+class FScreenSpaceSurfaceEdgeBlendCS : public FGlobalShader
+{
+public:
+	static constexpr uint32 THREADGROUPSIZE_X = 16;
+	static constexpr uint32 THREADGROUPSIZE_Y = 16;
+	static constexpr uint32 THREADGROUPSIZE_Z = 1;
+	
+public:
+	DECLARE_GLOBAL_SHADER(FScreenSpaceSurfaceEdgeBlendCS);
+	SHADER_USE_PARAMETER_STRUCT(FScreenSpaceSurfaceEdgeBlendCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewParam)
+
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BlendSrcVoronoi)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BlendSrcGBufferNormal)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BlendSrcGBufferPbr)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BlendSrcGBufferBcAo)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BlendSrcDepthTexture)
+		SHADER_PARAMETER(FUintVector2, BlendSrcDimensions)
+		SHADER_PARAMETER_SAMPLER(SamplerState, BlendSrcSampler)
+	
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, BlendDstGBufferNormal)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, BlendDstGBufferPbr)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, BlendDstGBufferBcAo)
+		SHADER_PARAMETER(FUintVector2, BlendDstDimensions)
+
+		SHADER_PARAMETER(float, BlendPixelWeight)
+	
+	END_SHADER_PARAMETER_STRUCT()
+
+	//Called by the engine to determine which permutations to compile for this shader
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return !IsMobilePlatform(Parameters.Platform);
+	}
+	//Modifies the compilations environment of the shader
+	static inline void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_X"), THREADGROUPSIZE_X);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Y"), THREADGROUPSIZE_Y);
+		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
+	}
+};
 
 
 

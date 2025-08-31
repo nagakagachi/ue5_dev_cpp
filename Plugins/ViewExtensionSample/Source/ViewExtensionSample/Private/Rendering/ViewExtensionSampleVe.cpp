@@ -122,8 +122,140 @@ void FViewExtensionSampleVe::PostRenderBasePassDeferred_RenderThread(FRDGBuilder
 	FGlobalShaderMap* GlobalShaderMap = GetGlobalShaderMap(GMaxRHIFeatureLevel);
 	
 	FRHISamplerState* PointClampSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
-
 	const FIntRect PrimaryViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
+
+	FUintVector2 InputRect = FUintVector2(PrimaryViewRect.Width(), PrimaryViewRect.Height());
+	
+	// ScreenSpace Surface Edge Blend (Mesh Blend) 実装検証.
+	if(subsystem->enable_ss_surface_edge_blend)
+	{
+		// GBUfferをコピー.
+		// コピー元.
+		FRDGTextureRef gb_tex_normal = RenderTargets[RT_GB_Normal].GetTexture();
+		FRDGTextureRef gb_tex_pbr_shadingmodel = RenderTargets[RT_GB_PbrShadingModel].GetTexture();
+		FRDGTextureRef gb_tex_bc_ao = RenderTargets[RT_GB_BcAo].GetTexture();
+		FRDGTextureRef gb_depth = SceneTextures->GetParameters()->SceneDepthTexture;
+
+		// ブレンド境界のエッジ生成.
+		FRDGTexture* VoronoiCellTexture{};
+		{
+			// Voronoi用Seedバッファ.
+			FRDGTextureDesc VoronoiSeedTexDesc = {};;
+			{
+				{
+					const EPixelFormat format = PF_FloatRGBA;
+					// R16B16_Floatが望ましいがUEで選択できないため R32G32B32_Float 等としている. Shader側RWTextureの型と合わせることに注意.
+					VoronoiSeedTexDesc = FRDGTextureDesc::Create2D(
+						gb_tex_normal->Desc.Extent, format, FClearValueBinding::Black,
+						ETextureCreateFlags::ShaderResource|ETextureCreateFlags::UAV
+						);
+				}
+				VoronoiCellTexture = GraphBuilder.CreateTexture(VoronoiSeedTexDesc, TEXT("VoronoiCellSeed"));
+			}
+
+			// Generate Voronoi Cell Seed (Edge detection and other).
+			{
+				FRDGTextureUAVRef WorkUav = GraphBuilder.CreateUAV(VoronoiCellTexture);
+				auto* Parameters = GraphBuilder.AllocParameters<FVonoroiCellSeedForSsSurfaceEdgeBlend::FParameters>();
+				{
+					Parameters->ViewParam = InView.ViewUniformBuffer;// DeviceDepth to ViewDepth変換等のため.
+
+					Parameters->EdgeSrcGBufferNormal = gb_tex_normal;
+					Parameters->EdgeSrcGBufferPbr = gb_tex_pbr_shadingmodel;
+					Parameters->EdgeSrcGBufferBcAo = gb_tex_bc_ao;
+					Parameters->EdgeSrcDepthTexture = gb_depth;
+					
+					Parameters->EdgeSrcDimensions = InputRect;
+					Parameters->EdgeSrcSampler = PointClampSampler;
+
+					Parameters->EdgeDstTexture = WorkUav;
+					Parameters->EdgeDstDimensions = InputRect;
+				}
+		
+				TShaderMapRef<FVonoroiCellSeedForSsSurfaceEdgeBlend> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+				FIntVector DispatchGroupSize = FIntVector(FMath::DivideAndRoundUp(InputRect.X, cs->THREADGROUPSIZE_X),
+						FMath::DivideAndRoundUp(InputRect.Y, cs->THREADGROUPSIZE_Y), 1);
+		
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("GenerateVoronoiCellSeed"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+			}
+		}
+
+		// ブレンド境界のVoronoiDiagram生成.
+		// Generate Voronoi.
+		FRDGTexture* voronoi_texture = FNagaVoronoiJfaCompute::Execute(GraphBuilder, VoronoiCellTexture, InputRect);
+
+		
+		// コピー先のワークバッファ作成.
+		FRDGTextureRef work_gb_tex_normal = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				gb_tex_normal->Desc.Extent,
+				gb_tex_normal->Desc.Format,
+				{},
+				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
+			), TEXT("Naga_GBuffer_A_Work"));
+		FRDGTextureRef work_gb_tex_pbr_shadingmodel = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				gb_tex_pbr_shadingmodel->Desc.Extent,
+				gb_tex_pbr_shadingmodel->Desc.Format,
+				{},
+				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
+			), TEXT("Naga_GBuffer_B_Work"));
+		
+		FRDGTextureRef work_gb_tex_bc_ao = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(
+				gb_tex_bc_ao->Desc.Extent,
+				gb_tex_bc_ao->Desc.Format,
+				{},
+				ETextureCreateFlags::ShaderResource | ETextureCreateFlags::RenderTargetable | ETextureCreateFlags::UAV
+			), TEXT("Naga_GBuffer_C_Work"));
+
+		// コピーコマンド.
+		{
+			FRHICopyTextureInfo copy_info{};
+			AddCopyTexturePass(GraphBuilder, gb_tex_normal, work_gb_tex_normal, copy_info);
+			AddCopyTexturePass(GraphBuilder, gb_tex_pbr_shadingmodel, work_gb_tex_pbr_shadingmodel, copy_info);
+			AddCopyTexturePass(GraphBuilder, gb_tex_bc_ao, work_gb_tex_bc_ao, copy_info);
+		}
+
+		{
+			// SceneTestureに直接UAV書き込みできる(BcAoは確認).
+			FRDGTextureUAVRef gb_normal_uav = GraphBuilder.CreateUAV(gb_tex_normal);
+			FRDGTextureUAVRef gb_pbr_shadingmodel_uav = GraphBuilder.CreateUAV(gb_tex_pbr_shadingmodel);
+			FRDGTextureUAVRef gb_bc_ao_uav = GraphBuilder.CreateUAV(gb_tex_bc_ao);
+			
+			auto* Parameters = GraphBuilder.AllocParameters<FScreenSpaceSurfaceEdgeBlendCS::FParameters>();
+			{
+				Parameters->ViewParam = InView.ViewUniformBuffer;// DeviceDepth to ViewDepth変換等のため.
+
+				// Voronoi
+				Parameters->BlendSrcVoronoi = voronoi_texture;
+				// GBuffer
+				Parameters->BlendSrcGBufferNormal = work_gb_tex_normal;
+				Parameters->BlendSrcGBufferPbr = work_gb_tex_pbr_shadingmodel;
+				Parameters->BlendSrcGBufferBcAo = work_gb_tex_bc_ao;
+				// Depth
+				Parameters->BlendSrcDepthTexture = gb_depth;
+				// InputBufferInfo
+				Parameters->BlendSrcDimensions = InputRect;
+				Parameters->BlendSrcSampler = PointClampSampler;
+
+				// Output
+				Parameters->BlendDstGBufferNormal = gb_normal_uav;
+				Parameters->BlendDstGBufferPbr = gb_pbr_shadingmodel_uav;
+				Parameters->BlendDstGBufferBcAo = gb_bc_ao_uav;
+				Parameters->BlendDstDimensions = InputRect;
+
+				// Parameter
+				Parameters->BlendPixelWeight = FMath::Max(1.0f, subsystem->ss_surface_edge_blend_pixel_width);
+			}
+
+			TShaderMapRef<FScreenSpaceSurfaceEdgeBlendCS> cs(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			const auto DispatchGroupSize = CalcComputeDispatchGroupSizeHelper(cs, InputRect);
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("SsSurfaceEdgeBlend"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
+		}
+	}
+
 	
 	// GBuffer操作.
 	if(subsystem->enable_worldnormal_unlit)
@@ -277,8 +409,6 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 			FRDGTextureDesc::Create2D(scene_color_desc.Extent, PF_FloatRGBA, scene_color_desc.ClearValue, ETextureCreateFlags::ShaderResource|ETextureCreateFlags::UAV),
 			TEXT("QuadTreePrepare")
 			);
-
-
 		// TODO.
 		// テスト用のクリア. 全域をデバッグ用にスクリーンコピーする場合にNaNなどが入ると壊れるため, 検証用のクリアで本来はいらないはず.
 		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(TexQuadTreePrepare), 0.0f);
@@ -487,17 +617,16 @@ void FViewExtensionSampleVe::PrePostProcessPass_RenderThread(FRDGBuilder& GraphB
 				FMath::DivideAndRoundUp(WorkRect.Y, cs->THREADGROUPSIZE_Y), 1);
 		
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("NagaHistoryTest"), ERDGPassFlags::Compute, cs, Parameters, DispatchGroupSize);
-	}
-	
-	// Historyテスト.
-	if(subsystem->enable_history_test)
-	{
-		// SceneColorを次フレームへのHistoryTextureへコピー.
-		FRHICopyTextureInfo copy_info{};
-		AddCopyTexturePass(GraphBuilder, SceneColor.Texture, NewHistoryTexture, copy_info);
 
-		// HistoryTextureをExtractionして次フレーム利用へ.
-		GraphBuilder.QueueTextureExtraction(NewHistoryTexture, &HistoryTexture);
+		
+		{
+			// SceneColorを次フレームへのHistoryTextureへコピー.
+			FRHICopyTextureInfo copy_info{};
+			AddCopyTexturePass(GraphBuilder, SceneColor.Texture, NewHistoryTexture, copy_info);
+
+			// HistoryTextureをExtractionして次フレーム利用へ.
+			GraphBuilder.QueueTextureExtraction(NewHistoryTexture, &HistoryTexture);
+		}
 	}
 }
 

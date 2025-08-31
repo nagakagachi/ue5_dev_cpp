@@ -28,6 +28,9 @@ void AViewExtensionSampleControlActor::Tick(float DeltaTime)
 			subsystem->edge_debug_view = edge_debug_view;
 			subsystem->enable_voronoi_tile_cell = enable_voronoi_tile_cell;
 
+			subsystem->enable_ss_surface_edge_blend = enable_ss_surface_edge_blend;
+			subsystem->ss_surface_edge_blend_pixel_width = ss_surface_edge_blend_pixel_width;
+			
 			subsystem->enable_history_test = enable_history_test;
 			
 			subsystem->enable_worldnormal_unlit = enable_worldnormal_unlit;
