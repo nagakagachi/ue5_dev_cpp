@@ -2,6 +2,29 @@
 
 #include "/Engine/Private/Common.ush"
 
+// output : [0,1]
+float SampleRandom(float2 st)
+{
+	return frac(sin(dot(st.xy,
+						 float2(12.9898,78.233)))*43758.5453123);
+}
+// output : [0,1]
+float2 SampleRandomFloat2Float2(float2 st) {
+	const float r0 = frac(sin(dot(st.xy, float2(12.9898,78.233)))*43758.5453123);
+	const float r1 = frac(sin(dot(st.xy, float2(120.9898,7.233)))*43758.5453123);
+	return float2(r0, r1);
+}
+
+float IGN(float2 st)
+{
+	return frac(52.9829189 * frac(0.06711056 * float(st.x) + 0.00583715 * float(st.y)));
+}
+float2 IGN2(float2 st)
+{
+	return float2(IGN(st), IGN(st.xy + SampleRandomFloat2Float2(st)*1024.0));
+}
+
+
 #define CONCAVE_EDGE_SAMPLE_POINT_COUNT 4
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -27,24 +50,24 @@
 		const int2 pixel_index = int2(DTid.xy);
 		const float2 pixel_sv_pos = float2(pixel_index) + 0.5;
 		
-		/*
-		// Normalはunorm格納.
-		float4 gb_normal = EdgeSrcGBufferNormal.Load(int3(pixel_index, 0)) * 2.0 - 1.0;
-		float4 gb_pbr = EdgeSrcGBufferPbr.Load(int3(pixel_index, 0));
-		float4 gb_bcao = EdgeSrcGBufferBcAo.Load(int3(pixel_index, 0));
-		*/
-
 		const float device_depth = EdgeSrcDepthTexture.Load(int3(pixel_index, 0)).x;
 		const float view_depth = ConvertFromDeviceZ(device_depth);// View空間深度変換. ViewUniformBufferを要求する.
 		float3 world_pos = DFHackToFloat(SvPositionToWorld(float4(pixel_sv_pos, device_depth, 1)));
 		float4 gb_normal = EdgeSrcGBufferNormal.Load(int3(pixel_index, 0)) * 2.0 - 1.0;
-		
+
+#if 4 == CONCAVE_EDGE_SAMPLE_POINT_COUNT
 		const float2 sample_offsets[CONCAVE_EDGE_SAMPLE_POINT_COUNT] = {
 			float2(-1.0, 0.0),
-			float2(1.0, 0.0),
 			float2(0.0, -1.0),
+			float2(1.0, 0.0),
 			float2(0.0, 1.0)
 		};
+#else
+		const float2 sample_offsets[CONCAVE_EDGE_SAMPLE_POINT_COUNT] = {
+			float2(1.0, 0.0),
+			float2(0.0, 1.0)
+		};
+#endif
 
 		const float neighbor_distance_limit = 3.0;// * (view_depth);
 		float concave_edge_accum = 0.0;
@@ -64,7 +87,7 @@
 		}
 		concave_edge_accum = (0.0<weight_total)? (concave_edge_accum / weight_total) : 0.0;
 
-		const float normal_edge_threshold = 0.05;
+		const float normal_edge_threshold = 0.02;
 		if (normal_edge_threshold < concave_edge_accum)
 		{
 			EdgeDstTexture[DTid.xy] = float4(1,0,0,0);
@@ -103,37 +126,120 @@
 	{
 		const float blend_width_pixel_base = BlendPixelWeight;
 		const float blend_edge_depth_fade_limit_base = 5.0;
-		
-		const float2 pixel_pos = DTid.xy + float2(0.5, 0.5);
 
-		float3 voronoi_value = BlendSrcVoronoi.Load(int3(DTid.xy, 0)).xyz;
-		const float2 vec_to_nearest_edge = voronoi_value.xy - pixel_pos;
-		const float2 edge_blend_sample_pos = voronoi_value.xy + normalize(vec_to_nearest_edge)*blend_width_pixel_base;
+		int2 pixel_index = int2(DTid.xy);
+
+		float3 voronoi_value = BlendSrcVoronoi.Load(int3(pixel_index, 0)).xyz;
+		const float2 pixel_pos = pixel_index + float2(0.5, 0.5);
 		
-		float device_depth = BlendSrcDepthTexture.Load(int3(DTid.xy, 0)).x;
+		const float2 vec_to_nearest_edge = voronoi_value.xy - pixel_pos;
+		//const float2 edge_blend_sample_pos = voronoi_value.xy + normalize(vec_to_nearest_edge)*blend_width_pixel_base;
+		const float2 edge_blend_sample_pos = voronoi_value.xy + vec_to_nearest_edge*2.0;
+		
+		float device_depth = BlendSrcDepthTexture.Load(int3(pixel_index, 0)).x;
 		// View空間深度変換. ViewUniformBufferを要求する.
 		float view_depth = ConvertFromDeviceZ(device_depth);
 		
 		
 		// Normalはunorm格納.
-		float4 gb_normal = BlendSrcGBufferNormal.Load(int3(DTid.xy, 0)) * 2.0 - 1.0;
-		float4 gb_pbr = BlendSrcGBufferPbr.Load(int3(DTid.xy, 0));
-		float4 gb_bcao = BlendSrcGBufferBcAo.Load(int3(DTid.xy, 0));
+		float4 gb_normal_unorm = BlendSrcGBufferNormal.Load(int3(pixel_index, 0));
+		float4 gb_normal = gb_normal_unorm * 2.0 - 1.0;
+		float4 gb_pbr = BlendSrcGBufferPbr.Load(int3(pixel_index, 0));
+		float4 gb_bcao = BlendSrcGBufferBcAo.Load(int3(pixel_index, 0));
 
 		
 		float device_depth_edge = BlendSrcDepthTexture.Load(int3(edge_blend_sample_pos.xy, 0)).x;
 		// View空間深度変換. ViewUniformBufferを要求する.
 		float view_depth_edge = ConvertFromDeviceZ(device_depth_edge);
-		float4 gb_bcao_edge = BlendSrcGBufferBcAo.Load(int3(edge_blend_sample_pos.xy, 0));
 
 		
 		float blend_rate = 1.0 - saturate(length(vec_to_nearest_edge)*max(view_depth/100.0, 1.0) / (blend_width_pixel_base));
-		blend_rate *= saturate((blend_edge_depth_fade_limit_base *view_depth - abs(view_depth_edge-view_depth)));// 深度が大きく違うサンプルは棄却.
+		blend_rate *= saturate((blend_edge_depth_fade_limit_base * view_depth - abs(view_depth_edge-view_depth)));// 深度が大きく違うサンプルは棄却.
 		
-		BlendDstGBufferBcAo[DTid.xy] = float4(gb_bcao.xyz*(1.0-blend_rate), gb_bcao.w );
+		if (0.0 < blend_rate)
+		{
+			// 現在のVoronoi計算では境界部がゼロになるため, ブレンドをするペアの情報が得られず境界アーティファクトがでてしまう.
+			// そのため乱数でノイズにして緩和.
 
-		//BlendDstGBufferBcAo[DTid.xy] = lerp(gb_bcao, gb_bcao_edge, blend_rate);
-		
+			const float blend_pair_noise_width = 10.0;
+			const float blend_pair_offset = (IGN(pixel_pos.xy) * 2.0 - 1.0);// * blend_rate;
+			
+#if 1
+			
+			// エッジ上はサンプルが自分自身となってしまいブレンドされないため, アドホックだが周辺ランダムサンプルする.
+			const bool is_edge = all(int2(vec_to_nearest_edge) == int2(0,0));
+
+			if (is_edge)
+			{
+				// エッジ上はサンプルが自分自身となってしまうブレンドされないため, アドホックだが周辺ランダムサンプルする.
+
+				// 回転ランダムサンプル.
+				const int sample_count = 4;
+				const float rot_rad = 3.14159265 * 2.0 / float(sample_count);
+				const float2x2 rot2x2 = float2x2(
+					cos(rot_rad), -sin(rot_rad),
+					sin(rot_rad), cos(rot_rad)
+				);
+				const float base_noise = IGN(pixel_pos.xy);
+				float2 sample_dir = normalize(float2(cos(base_noise*6.2831853), sin(base_noise*6.2831853)));
+				
+				float4 sample_bcao_accum = 0.0;
+				float4 sample_normal_accum = 0.0;
+				float weight_total = 0.0;
+				for (int i = 0; i < sample_count; ++i)
+				{
+					sample_dir = mul(sample_dir, rot2x2);
+					
+					float4 gb_bcao_neighbor = BlendSrcGBufferBcAo.Load(int3(edge_blend_sample_pos + sample_dir * blend_pair_noise_width, 0));
+					float4 gb_normal_unorm_neighbor = BlendSrcGBufferNormal.Load(int3(edge_blend_sample_pos + sample_dir * blend_pair_noise_width, 0));
+				
+					sample_bcao_accum += gb_bcao_neighbor;
+					sample_normal_accum += gb_normal_unorm_neighbor * 2.0 - 1.0;
+					
+					weight_total += 1.0;
+				}
+				sample_bcao_accum = (0.0<weight_total)? (sample_bcao_accum / weight_total) : 0.0;
+				sample_normal_accum = (0.0<weight_total)? (sample_normal_accum / weight_total) : 0.0;
+				
+				BlendDstGBufferBcAo[DTid.xy] = sample_bcao_accum;
+				BlendDstGBufferNormal[DTid.xy].xyz = normalize(sample_normal_accum).xyz * 0.5 + 0.5;
+			}
+			else
+			{
+				// エッジ上以外ではエッジの反対側のサンプルが可能なのでそのままブレンド.
+				const float blend_effective_rate = blend_rate * 0.5;// 中央部で最大50%
+				
+				float4 gb_bcao_neighbor = BlendSrcGBufferBcAo.Load(int3(edge_blend_sample_pos, 0));
+				float4 gb_normal_unorm_neighbor = BlendSrcGBufferNormal.Load(int3(edge_blend_sample_pos, 0));
+				float4 gb_normal_neighbor = gb_normal_unorm_neighbor * 2.0 - 1.0;
+				
+				BlendDstGBufferBcAo[DTid.xy] = lerp(gb_bcao, gb_bcao_neighbor, blend_effective_rate);
+				BlendDstGBufferNormal[DTid.xy].xyz = normalize(lerp(gb_normal.xyz, gb_normal_neighbor.xyz, blend_effective_rate)) * 0.5 + 0.5;
+			}
+		}
+#else
+			const float2 sample_offsets[4] = {
+				float2(-1.0, 0.0),
+				float2(0.0, -1.0),
+				float2(1.0, 0.0),
+				float2(0.0, 1.0)
+			};
+			
+			float4 sample_bcao_accum = 0.0;
+			float weight_total = 0.0;
+			for (int i = 0; i < 4; ++i)
+			{
+				float4 gb_bcao = BlendSrcGBufferBcAo.Load(int3(edge_blend_sample_pos + sample_offsets[i] * blend_pair_offset * blend_pair_noise_width, 0));
+				
+				sample_bcao_accum += gb_bcao;
+				weight_total += 1.0;
+			}
+			sample_bcao_accum = (0.0<weight_total)? (sample_bcao_accum / weight_total) : 0.0;
+
+			const float blend_effective_rate = blend_rate * 0.5;// 中央部で最大50%
+			BlendDstGBufferBcAo[DTid.xy] = lerp(gb_bcao, sample_bcao_accum, blend_effective_rate);
+		}
+#endif
 	}
 
 
