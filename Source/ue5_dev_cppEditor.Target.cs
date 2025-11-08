@@ -8,8 +8,13 @@ public class ue5_dev_cppEditorTarget : TargetRules
 	public ue5_dev_cppEditorTarget(TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Editor;
-		DefaultBuildSettings = BuildSettingsVersion.V5;
-		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_4;
+		
+		//DefaultBuildSettings = BuildSettingsVersion.V5;
+		//IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_4;
+		
+		DefaultBuildSettings = BuildSettingsVersion.Latest;
+		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
+		
 		ExtraModuleNames.Add("ue5_dev_cpp");
 	}
 }

@@ -71,6 +71,37 @@ namespace naga::gpgpu
 		// FRenderResource interface.
 		virtual void InitRHI(FRHICommandListBase& RHICmdList) override
 		{
+			EBufferUsageFlags usage = EBufferUsageFlags::Static | EBufferUsageFlags::ShaderResource;
+			if (need_uav_)
+				usage |= EBufferUsageFlags::UnorderedAccess;
+
+			const FRHIBufferCreateDesc CreateDesc =
+				FRHIBufferCreateDesc::CreateVertex(TEXT("FComputeShaderVertexBufferBase"), this->GetStride() * GetNumVertices() * BufferMaxCount)
+				.AddUsage(usage)
+				.DetermineInitialState();
+
+			VertexBufferRHI = RHICmdList.CreateBuffer(CreateDesc);
+
+			// we have decide to create the SRV based on GMaxRHIShaderPlatform because this is created once and shared between feature levels for editor preview.
+			if (RHISupportsManualVertexFetch(GMaxRHIShaderPlatform))
+			{
+				srv_ = RHICmdList.CreateShaderResourceView(VertexBufferRHI,
+					FRHIViewDesc::CreateBufferSRV()
+					.SetType(FRHIViewDesc::EBufferType::Typed)
+					//.SetStride(SrvStride)
+					.SetFormat(SrvFormat));
+			}
+			// UAVアクセスしたい場合は生成
+			if (need_uav_)
+			{
+				uav_ = RHICmdList.CreateUnorderedAccessView(VertexBufferRHI,
+					FRHIViewDesc::CreateBufferUAV()
+					.SetType(FRHIViewDesc::EBufferType::Typed)
+					//.SetStride(SrvStride)
+					.SetFormat(SrvFormat));
+			}
+
+			/*
 			// Create the vertex buffer.
 			FRHIResourceCreateInfo CreateInfo(_T("FComputeShaderVertexBufferBase"));
 
@@ -87,6 +118,7 @@ namespace naga::gpgpu
 			// UAVアクセスしたい場合は生成
 			if (need_uav_)
 				uav_ = RHICmdList.CreateUnorderedAccessView(VertexBufferRHI, SrvFormat);
+			*/
 		}
 		virtual void ReleaseRHI() override
 		{
@@ -458,12 +490,13 @@ namespace naga::gpgpu
 	class FComputeShaderIndexBuffer32 : public FIndexBuffer
 	{
 	public:
+		using ElementType = uint32;
 
 		~FComputeShaderIndexBuffer32();
 		void CleanUp();
 
 		void Init(uint32 InNumVertices, bool bNeedsUAV = false, bool bNeedsCPUAccess = false);
-		void Init(const TArray<uint32>& InVertices, bool bNeedsUAV = false, bool bNeedsCPUAccess = false);
+		void Init(const TArray<ElementType>& InVertices, bool bNeedsUAV = false, bool bNeedsCPUAccess = false);
 
 		virtual void InitRHI(FRHICommandListBase& RHICmdList) override;
 		virtual void ReleaseRHI() override;
@@ -483,7 +516,11 @@ namespace naga::gpgpu
 		}
 
 	protected:
-		TResourceArray<uint32, INDEXBUFFER_ALIGNMENT>* Indices = nullptr;
+		TResourceArray<ElementType, INDEXBUFFER_ALIGNMENT>* Indices = nullptr;
+		auto GetDataResourceView()
+		{
+			return Indices->GetResourceDataView<ElementType>();
+		}
 
 		int	num = 0;
 		bool NeedsUAV = false;

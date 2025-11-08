@@ -11,6 +11,7 @@
 
 #include "StaticMeshVertexData.h"
 #include "EngineUtils.h"
+#include "RHIResourceUtils.h"
 
 namespace naga::gpgpu
 {
@@ -33,27 +34,59 @@ namespace naga::gpgpu
 		NeedsUAV = bNeedsUAV;
 		CleanUp();
 	}
-	void FComputeShaderIndexBuffer32::Init(const TArray<uint32>& InIndices, bool bNeedsUAV, bool bNeedsCPUAccess)
+	void FComputeShaderIndexBuffer32::Init(const TArray<ElementType>& InIndices, bool bNeedsUAV, bool bNeedsCPUAccess)
 	{
 		num = InIndices.Num();
 		NeedsUAV = bNeedsUAV;
 
 		AllocateData( bNeedsCPUAccess );
 		Indices->SetNumUninitialized(InIndices.Num());
-		FMemory::Memcpy(Indices->GetData(), InIndices.GetData(), InIndices.Num() * sizeof(uint32));
+		FMemory::Memcpy(Indices->GetData(), InIndices.GetData(), InIndices.Num() * sizeof(ElementType));
 	}
 	void FComputeShaderIndexBuffer32::InitRHI(FRHICommandListBase& RHICmdList)
 	{
+		EBufferUsageFlags usage = EBufferUsageFlags::Static | EBufferUsageFlags::ShaderResource;
+		if (NeedsUAV)
+			usage |= EBufferUsageFlags::UnorderedAccess;
+		
+		//IndexBufferRHI = UE::RHIResourceUtils::CreateIndexBufferFromArray(RHICmdList, TEXT("FComputeShaderIndexBuffer32"), usage, GetDataResourceView());
+		
+		FRHIBufferCreateDesc CreateDesc =
+			FRHIBufferCreateDesc::CreateIndex(TEXT("FComputeShaderIndexBuffer32"), sizeof(ElementType) * num, sizeof(ElementType))
+			.AddUsage(usage);
+		if (Indices)
+		{
+			CreateDesc.SetInitActionResourceArray(Indices);
+		}
+
+		IndexBufferRHI = RHICmdList.CreateBuffer(CreateDesc);
+		
+		srv = RHICmdList.CreateShaderResourceView(
+			IndexBufferRHI, 
+			FRHIViewDesc::CreateBufferSRV()
+				.SetType(FRHIViewDesc::EBufferType::Typed)
+				//.SetStride(sizeof(ElementType))
+				.SetFormat(PF_R32_UINT));
+		
+		if(NeedsUAV)
+			uav = RHICmdList.CreateUnorderedAccessView(IndexBufferRHI,
+				FRHIViewDesc::CreateBufferUAV()
+				.SetType(FRHIViewDesc::EBufferType::Typed)
+				//.SetStride(sizeof(ElementType))
+				.SetFormat(PF_R32_UINT));
+
+		/*
 		FRHIResourceCreateInfo CreateInfo(_T("FComputeShaderIndexBuffer32"), Indices);
 		EBufferUsageFlags usage = BUF_Static | BUF_ShaderResource;
 		if (NeedsUAV)
 			usage |= BUF_UnorderedAccess;
 
 		IndexBufferRHI = RHICmdList.CreateIndexBuffer(sizeof(uint32), num * sizeof(uint32), usage, CreateInfo);
-
+		
 		srv = RHICmdList.CreateShaderResourceView(IndexBufferRHI, sizeof(uint32), PF_R32_UINT);
 		if(NeedsUAV)
 			uav = RHICmdList.CreateUnorderedAccessView(IndexBufferRHI, PF_R32_UINT);
+		*/
 	}
 	void FComputeShaderIndexBuffer32::ReleaseRHI()
 	{
@@ -66,7 +99,7 @@ namespace naga::gpgpu
 	{
 		// Clear any old VertexData before allocating.
 		CleanUp();
-		Indices = new TResourceArray<uint32, INDEXBUFFER_ALIGNMENT>(bNeedsCPUAccess);
+		Indices = new TResourceArray<ElementType, INDEXBUFFER_ALIGNMENT>(bNeedsCPUAccess);
 	}
 	//=================================================================================================================================================
 }

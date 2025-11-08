@@ -196,6 +196,30 @@ namespace naga::gpgpu
 			FResourceArrayInterface* ResourceArray = bufferData_->GetResourceArray();
 			if (ResourceArray->GetResourceDataSize())
 			{
+
+				EBufferUsageFlags usage = EBufferUsageFlags::Static | EBufferUsageFlags::ShaderResource;
+				if (enable_uav_)
+					usage |= EBufferUsageFlags::UnorderedAccess;
+
+				rhi_state_ = ERHIAccess::UAVCompute;
+				
+				const FRHIBufferCreateDesc CreateDesc =
+					FRHIBufferCreateDesc::CreateStructured(TEXT("FStructuredBufferResource"), num_ * stride_, stride_)
+					//.SetUsage(usage)
+					.AddUsage(usage)
+					.SetInitActionResourceArray(ResourceArray)
+					.SetInitialState(rhi_state_);
+				
+				buffer_ = RHICmdList.CreateBuffer(CreateDesc);
+
+				srv_ = RHICmdList.CreateShaderResourceView(buffer_,
+					FRHIViewDesc::CreateBufferSRV().SetType(FRHIViewDesc::EBufferType::Structured).SetStride(stride_));
+
+				// UAVアクセスしたい場合は生成
+				if (enable_uav_)
+					uav_ = RHICmdList.CreateUnorderedAccessView(buffer_, FRHIViewDesc::CreateBufferUAV().SetType(FRHIViewDesc::EBufferType::Structured).SetStride(stride_));
+				
+				/*
 				// Create the vertex buffer.
 				FRHIResourceCreateInfo CreateInfo(_T("FStructuredBufferResource"), ResourceArray);
 
@@ -210,6 +234,7 @@ namespace naga::gpgpu
 				// UAVアクセスしたい場合は生成
 				if (enable_uav_)
 					uav_ = RHICmdList.CreateUnorderedAccessView(buffer_, false, false);
+				*/
 			}
 		}
 		// FRenderResource interface.
