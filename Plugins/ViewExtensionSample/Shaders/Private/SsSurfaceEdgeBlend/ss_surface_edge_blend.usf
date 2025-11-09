@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // ss_surface_edge_blend.usf
 
 #include "/Engine/Private/Common.ush"
@@ -241,7 +242,3 @@ float2 IGN2(float2 st)
 		}
 #endif
 	}
-
-
-
-

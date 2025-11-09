@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // voronoi_postprocess_test.usf
 
 #include "/Engine/Private/Common.ush"
@@ -158,8 +159,3 @@ float2 SampleRandomFloat2Float2(float2 st) {
 		pass0_OutputTexture[DTid.xy] = edge_stroke_color;
 		
 	}
-
-
-
-
-

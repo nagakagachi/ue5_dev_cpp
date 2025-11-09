@@ -1,3 +1,5 @@
+// @author: @nagakagachi
+
 #pragma once
 
 #include <tuple>
@@ -121,4 +123,3 @@ namespace naga
 		int	flip_index_ = 0;
 	};
 }
-	

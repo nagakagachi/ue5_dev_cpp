@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // resolve_hack_shading_model.usf
 
 #include "/Engine/Private/Common.ush"

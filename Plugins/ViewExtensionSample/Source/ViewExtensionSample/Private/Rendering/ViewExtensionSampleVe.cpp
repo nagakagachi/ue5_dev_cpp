@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 
 #include "Rendering/ViewExtensionSampleVe.h"
 
@@ -903,3 +904,4 @@ FScreenPassTexture FViewExtensionSampleVe::AddLensGhostPass(FRDGBuilder& GraphBu
 	
 	return FScreenPassTexture(tex_composite, InputViewport.Rect);
 }
+

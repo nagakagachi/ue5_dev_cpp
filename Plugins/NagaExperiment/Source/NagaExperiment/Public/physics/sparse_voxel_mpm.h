@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// @author: @nagakagachi
+#pragma once
 
 /*
 	MPMによる弾性体シミュレーション.

@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -14,6 +15,3 @@ class Aue5_dev_cppGameMode : public AGameModeBase
 public:
 	Aue5_dev_cppGameMode();
 };
-
-
-

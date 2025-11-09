@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // voronoi_jfa_compute.usf
 
 #include "/Engine/Private/Common.ush"

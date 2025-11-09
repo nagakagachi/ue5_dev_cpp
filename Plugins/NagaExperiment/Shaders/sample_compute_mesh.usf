@@ -1,4 +1,4 @@
-﻿
+﻿// @author: @nagakagachi
 #include "/Engine/Public/Platform.ush"
 
 // ComputeShaderによる頂点バッファ書き換えのサンプル用

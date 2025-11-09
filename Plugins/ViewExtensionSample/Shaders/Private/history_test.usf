@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // history_test.usf
 
 #include "/Engine/Private/Common.ush"
@@ -30,4 +31,3 @@
 		temporal_rate = temporal_rate*temporal_rate;
 		OutputTexture[DTid.xy] = lerp(source_color, prev_color, temporal_rate);
 	}
-

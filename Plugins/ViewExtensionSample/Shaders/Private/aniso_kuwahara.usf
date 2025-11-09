@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 /*
 	aniso_kuwahara.usf
 
@@ -274,4 +275,3 @@ https://github.com/GarrettGunnell/Post-Processing
 		
 		finalpass_OutputTexture[DTid.xy] = float4(output.xyz, 0);
 	}
-

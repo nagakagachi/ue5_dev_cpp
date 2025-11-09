@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// @author: @nagakagachi
+#pragma once
 
 #include "/Engine/Public/Platform.ush"
 

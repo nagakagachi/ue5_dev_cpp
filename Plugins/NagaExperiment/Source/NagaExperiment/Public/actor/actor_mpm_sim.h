@@ -1,4 +1,4 @@
-
+// @author: @nagakagachi
 #pragma once
 
 #include "CoreMinimal.h"

@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // ss_quadtree_prepare.usf
 
 #include "/Engine/Private/Common.ush"
@@ -97,6 +98,3 @@ PsOut MainPS(VsOutput input)
 	
 	return output;
 }
-
-
-

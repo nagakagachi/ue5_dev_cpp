@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 #pragma once
 
 
@@ -634,19 +635,4 @@ public:
 		OutEnvironment.SetDefine(TEXT("THREADGROUPSIZE_Z"), THREADGROUPSIZE_Z);
 	}
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

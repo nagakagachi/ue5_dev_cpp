@@ -1,4 +1,5 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+﻿// @author: @nagakagachi
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "voxel_engine.h"

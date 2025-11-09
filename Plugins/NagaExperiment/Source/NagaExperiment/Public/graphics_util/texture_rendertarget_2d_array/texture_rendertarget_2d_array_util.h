@@ -1,4 +1,5 @@
-﻿// Copyright nagakagachi. All Rights Reserved.
+﻿// @author: @nagakagachi
+// Copyright nagakagachi. All Rights Reserved.
 
 #pragma once
 

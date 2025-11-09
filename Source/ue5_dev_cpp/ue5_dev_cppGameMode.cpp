@@ -1,3 +1,4 @@
+// @author: @nagakagachi
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "ue5_dev_cppGameMode.h"

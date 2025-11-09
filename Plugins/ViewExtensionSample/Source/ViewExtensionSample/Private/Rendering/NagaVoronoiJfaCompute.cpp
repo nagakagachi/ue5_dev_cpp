@@ -1,4 +1,4 @@
-
+// @author: @nagakagachi
 #include "Rendering/NagaVoronoiJfaCompute.h"
 
 #include "RHIStaticStates.h"
