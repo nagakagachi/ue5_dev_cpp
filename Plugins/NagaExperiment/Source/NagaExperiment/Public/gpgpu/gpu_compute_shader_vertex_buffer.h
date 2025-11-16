@@ -88,7 +88,6 @@ namespace naga::gpgpu
 				srv_ = RHICmdList.CreateShaderResourceView(VertexBufferRHI,
 					FRHIViewDesc::CreateBufferSRV()
 					.SetType(FRHIViewDesc::EBufferType::Typed)
-					//.SetStride(SrvStride)
 					.SetFormat(SrvFormat));
 			}
 			// UAVアクセスしたい場合は生成
@@ -97,28 +96,8 @@ namespace naga::gpgpu
 				uav_ = RHICmdList.CreateUnorderedAccessView(VertexBufferRHI,
 					FRHIViewDesc::CreateBufferUAV()
 					.SetType(FRHIViewDesc::EBufferType::Typed)
-					//.SetStride(SrvStride)
 					.SetFormat(SrvFormat));
 			}
-
-			/*
-			// Create the vertex buffer.
-			FRHIResourceCreateInfo CreateInfo(_T("FComputeShaderVertexBufferBase"));
-
-			EBufferUsageFlags usage = BUF_Static | BUF_ShaderResource;
-			if (need_uav_)
-				usage |= BUF_UnorderedAccess;
-
-			VertexBufferRHI = RHICmdList.CreateVertexBuffer( this->GetStride() * GetNumVertices() * BufferMaxCount, usage, CreateInfo);
-
-			// we have decide to create the SRV based on GMaxRHIShaderPlatform because this is created once and shared between feature levels for editor preview.
-			if (RHISupportsManualVertexFetch(GMaxRHIShaderPlatform))
-				this->srv_ = RHICmdList.CreateShaderResourceView(VertexBufferRHI, SrvStride, SrvFormat);
-
-			// UAVアクセスしたい場合は生成
-			if (need_uav_)
-				uav_ = RHICmdList.CreateUnorderedAccessView(VertexBufferRHI, SrvFormat);
-			*/
 		}
 		virtual void ReleaseRHI() override
 		{
@@ -319,7 +298,6 @@ namespace naga::gpgpu
 				TangentElemType = TComputeShaderVertexTangentTypeSelector<TangentDataType>::VertexElementType;
 				TangentXOffset = STRUCT_OFFSET(TangentType, TangentX);
 				TangentZOffset = STRUCT_OFFSET(TangentType, TangentZ);
-				//TangentSizeInBytes = sizeof(TangentType);
 				TangentSizeInBytes = this->GetStride();
 
 				Data.TangentBasisComponents[0] = FVertexStreamComponent(

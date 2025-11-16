@@ -5,7 +5,9 @@
 #include "gpu_compute_shader_grass_component.h"
 
 #include "Materials/MaterialInterface.h"
-#include "MaterialDomain.h"
+//#include "MaterialDomain.h"
+#include "RHIShaderPlatform.h"
+#include "Materials/MaterialRelevance.h"
 
 #include "PrimitiveSceneProxy.h"
 #include "DynamicMeshBuilder.h"
@@ -24,6 +26,7 @@
 #include "gpu_compute_shader_vertex_buffer.h"
 #include "gpu_structured_buffer.h"
 #include "gpu_sort.h"
+#include "MeshComponentHelper.h"
 
 
 #define NGL_REPLACE_SHADER_PARAM_METHOD 1
@@ -1588,7 +1591,7 @@ public:
 		: FPrimitiveSceneProxy(InComponent)
 		, component_(InComponent)
 		, material_(InComponent->material_)
-		, MaterialRelevance(InComponent->GetMaterialRelevance(GetScene().GetFeatureLevel()))
+		, MaterialRelevance(InComponent->GetMaterialRelevance(GetScene().GetShaderPlatform()))
 		, buffers_(ERHIFeatureLevel::SM5)
 	{
 		// 確保する最大エンティティ数
@@ -2778,8 +2781,10 @@ void UComputeShaderMeshComponent::SetMaterialByName(FName MaterialSlotName, clas
 {
 	SetMaterial(0, Material);
 }
-FMaterialRelevance UComputeShaderMeshComponent::GetMaterialRelevance(ERHIFeatureLevel::Type InFeatureLevel) const
+FMaterialRelevance UComputeShaderMeshComponent::GetMaterialRelevance(EShaderPlatform InShaderPlatform) const
 {
+	// 参考 C:\Program Files\Epic Games\UE_5.7\Engine\Plugins\Experimental\Dataflow\Source\DataflowEnginePlugin\Private\Dataflow\DataflowComponent.cpp
+	
 	// Combine the material relevance for all materials.
 	FMaterialRelevance Result;
 	for (int32 ElementIndex = 0; ElementIndex < GetNumMaterials(); ElementIndex++)
@@ -2789,7 +2794,7 @@ FMaterialRelevance UComputeShaderMeshComponent::GetMaterialRelevance(ERHIFeature
 		{
 			MaterialInterface = UMaterial::GetDefaultMaterial(MD_Surface);
 		}
-		Result |= MaterialInterface->GetRelevance_Concurrent(InFeatureLevel);
+		Result |= MaterialInterface->GetRelevance_Concurrent(InShaderPlatform);
 	}
 	return Result;
 }

@@ -40,8 +40,7 @@ public:
 
 	virtual void SetMaterial(int32 ElementIndex, class UMaterialInterface* Material) override;
 	virtual void SetMaterialByName(FName MaterialSlotName, class UMaterialInterface* Material) override;
-	/** Accesses the scene relevance information for the materials applied to the mesh. Valid from game thread only. */
-	FMaterialRelevance GetMaterialRelevance(ERHIFeatureLevel::Type InFeatureLevel) const;
+	FMaterialRelevance GetMaterialRelevance(EShaderPlatform InShaderPlatform) const;
 
 	// バウンディングボリューム関係
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;

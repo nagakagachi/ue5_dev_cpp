@@ -181,7 +181,6 @@ public:
 			initial_vtx_attr[3].TangentZ = FVector3f(0, 0, 1);
 
 			// バッファオブジェクトの初期データにセット
-			//buffers_.PositionVertexBuffer.Init(initial_vtx_pos, enable_uav, cpu_access);
 			buffers_.PositionVertexBuffer.Init(4, enable_uav);
 			buffers_.ColorVertexBuffer.InitFromColorArray(initial_vtx_color.GetData(), initial_vtx_color.Num(), initial_vtx_color.GetTypeSize(), cpu_access);
 			buffers_.StaticMeshVertexBuffer.Init(initial_vtx_attr, 1, cpu_access);
@@ -304,10 +303,7 @@ public:
 		return Result;
 	}
 	virtual uint32 GetMemoryFootprint() const { return sizeof(*this) + GetAllocatedSize(); }
-	//uint32 GetAllocatedSize() const { return FPrimitiveSceneProxy::GetAllocatedSize(); }
-
-
-
+	
 	// Computeのエントリ
 	void EnqueueDispatchComputeShader()
 	{

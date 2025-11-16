@@ -51,8 +51,6 @@ namespace naga::gpgpu
 			else if ((uint32)Data.Num() > num)
 			{
 				// Shrink the array.
-				//bool AllowShinking = !EnumHasAnyFlags(BufferFlags, EResizeBufferFlags::AllowSlackOnReduce);
-				//Data.RemoveAt(num, Data.Num() - num, AllowShinking);
 				auto AllowShinking = (!EnumHasAnyFlags(BufferFlags, EResizeBufferFlags::AllowSlackOnReduce))? EAllowShrinking::Yes : EAllowShrinking::No;
 				Data.RemoveAt(num, Data.Num() - num, AllowShinking);
 			}
@@ -207,7 +205,6 @@ namespace naga::gpgpu
 				
 				const FRHIBufferCreateDesc CreateDesc =
 					FRHIBufferCreateDesc::CreateStructured(TEXT("FStructuredBufferResource"), num_ * stride_, stride_)
-					//.SetUsage(usage)
 					.AddUsage(usage)
 					.SetInitActionResourceArray(ResourceArray)
 					.SetInitialState(rhi_state_);
@@ -220,23 +217,6 @@ namespace naga::gpgpu
 				// UAVアクセスしたい場合は生成
 				if (enable_uav_)
 					uav_ = RHICmdList.CreateUnorderedAccessView(buffer_, FRHIViewDesc::CreateBufferUAV().SetType(FRHIViewDesc::EBufferType::Structured).SetStride(stride_));
-				
-				/*
-				// Create the vertex buffer.
-				FRHIResourceCreateInfo CreateInfo(_T("FStructuredBufferResource"), ResourceArray);
-
-				EBufferUsageFlags usage = BUF_Static | BUF_ShaderResource;
-				if (enable_uav_)
-					usage |= BUF_UnorderedAccess;
-
-				buffer_ = RHICmdList.CreateStructuredBuffer(stride_, num_ * stride_, usage, CreateInfo);
-
-				srv_ = RHICmdList.CreateShaderResourceView(buffer_);
-
-				// UAVアクセスしたい場合は生成
-				if (enable_uav_)
-					uav_ = RHICmdList.CreateUnorderedAccessView(buffer_, false, false);
-				*/
 			}
 		}
 		// FRenderResource interface.
@@ -261,7 +241,6 @@ namespace naga::gpgpu
 		int NumElement() const { return num_; }
 		int Stride() const { return stride_; }
 	
-		//FStructuredBufferRHIRef GetBuffer() { return buffer_; }
 		FBufferRHIRef GetBuffer() { return buffer_; }
 
 		FShaderResourceViewRHIRef GetSrv() { return srv_; }
